@@ -307,7 +307,18 @@ else:
                 if lote_existente:
                     st.warning(f"⚠️ **ATENCIÓN:** Ya existe un lote registrado para la sucursal **{sucursal_actual}** con la fecha **{fecha_str_fmt}**.")
                     st.info(f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación previa:** {lote_existente.get('observacion')}")
-                    st.write("Podés cambiar la fecha arriba o continuar para **sobrescribir y actualizar** el lote de esta fecha.")
+                    
+                    col_eliminar, col_seguir = st.columns(2)
+                    with col_eliminar:
+                        if st.button("🗑️ Eliminar Lote Existente", type="secondary"):
+                            try:
+                                supabase.table("lotes").delete().eq("id_lote", lote_existente.get('id_lote')).execute()
+                                st.success("¡Lote anterior eliminado con éxito! Ya podés continuar.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al eliminar el lote: {e}")
+                    with col_seguir:
+                        st.write("*(O continuá abajo para sobrescribirlo automáticamente al cerrar)*")
 
                 st.markdown("---")
 
@@ -467,7 +478,6 @@ else:
                         
                         referencia_usuario = st.text_input("📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)")
                         
-                        # Generamos el id de lote automático si es nuevo, o reusamos el existente
                         if lote_existente:
                             id_lote_final = lote_existente["id_lote"]
                             btn_label = "⚠️ Sobrescribir y Actualizar Lote Existente"
