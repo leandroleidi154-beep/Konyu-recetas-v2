@@ -29,17 +29,17 @@ if st.session_state["usuario_logueado"] is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.subheader("Acceso al Sistema")
-        email_input = st.text_input("Correo electrónico (Email)")
-        nombre_input = st.text_input("Nombre de Usuario")
+        usuario_input = st.text_input("Usuario")
+        password_input = st.text_input("Contraseña", type="password")
         
         if st.button("Ingresar", type="primary", use_container_width=True):
-            if email_input and nombre_input:
+            if usuario_input and password_input:
                 try:
-                    # Consulta a la tabla usuarios validando email y nombre
+                    # Consulta a la tabla usuarios validando nombre y password
                     res = supabase.table("usuarios")\
                         .select("*")\
-                        .eq("email", email_input)\
-                        .eq("nombre", nombre_input)\
+                        .eq("nombre", usuario_input)\
+                        .eq("password", password_input)\
                         .execute()
                     
                     if res.data and len(res.data) > 0:
@@ -47,7 +47,7 @@ if st.session_state["usuario_logueado"] is None:
                         st.success("¡Inicio de sesión exitoso!")
                         st.rerun()
                     else:
-                        st.error("Email o nombre de usuario incorrectos.")
+                        st.error("Usuario o contraseña incorrectos.")
                 except Exception as e:
                     st.error(f"Error de conexión con la base de datos: {e}")
             else:
@@ -72,6 +72,7 @@ else:
     if rol == "administrador":
         st.header("👑 Panel de Administrador")
         st.write("Bienvenido al módulo de administración central.")
+        st.info("💡 Próximamente: Aquí podrás dar de alta nuevos usuarios y gestionar contraseñas.")
         
     elif rol == "sucursal":
         st.header("🏪 Panel de Sucursal")
