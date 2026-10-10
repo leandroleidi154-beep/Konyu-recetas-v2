@@ -476,33 +476,30 @@ else:
                                     and cols[1].startswith("A")
                                     and cols[1][1:].isdigit()
                                 ):
-                                    # Buscar hacia arriba el nombre real de la Obra Social
-                                    for offset in range(1, 6):
-                                        if i - offset >= 0:
-                                            linea_prev = lineas[i - offset].split(";")
-                                            posibles_titulos = [
-                                                c.strip("; \n")
-                                                for c in linea_prev
-                                                if c.strip("; \n")
-                                            ]
+                                    # Miramos exclusivamente la línea anterior (offset 1) donde está el nombre real
+                                    if i - 1 >= 0:
+                                        linea_prev = lineas[i - 1].split(";")
+                                        posibles_titulos = [
+                                            c.strip("; \n")
+                                            for c in linea_prev
+                                            if c.strip("; \n")
+                                        ]
 
-                                            # Filtrar palabras clave, códigos 'A', montos, abreviaturas y números sueltos
-                                            cand = [
-                                                t.strip()
-                                                for t in posibles_titulos
-                                                if t.strip()
-                                                and not t.startswith("A")
-                                                and not t.isdigit()  # Evita agarrar números sueltos como 6 o 102
-                                                and "Mandataria" not in t
-                                                and "$" not in t
-                                                and "Tk" not in t
-                                                and "Os" not in t
-                                                and t.upper()
-                                                not in ["COMP", "REC", "NC/A", "PLAN"]
-                                            ]
-                                            if cand:
-                                                obra_social_actual = cand[0]
-                                                break
+                                        cand = [
+                                            t.strip()
+                                            for t in posibles_titulos
+                                            if t.strip()
+                                            and not t.startswith("A")
+                                            and not t.isdigit()
+                                            and "Mandataria" not in t
+                                            and "$" not in t
+                                            and "Tk" not in t
+                                            and "Os" not in t
+                                            and t.upper()
+                                            not in ["COMP", "REC", "NC/A", "PLAN"]
+                                        ]
+                                        if cand:
+                                            obra_social_actual = cand[0]
 
                                 # Extraer datos de la receta
                                 for idx_c, val_c in enumerate(cols):
