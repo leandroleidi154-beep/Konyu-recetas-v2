@@ -206,55 +206,50 @@ else:
                     st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                     st.markdown("---")
 
-                    # 2. Resumen en formato de lista y renglones compactos
-                    st.subheader("📊 Control por Obra Social (Resumen)")
+                    # 2. Resumen en renglones limpios con números grandes
+                    st.subheader("📊 Control por Obra Social")
                     
                     obras_sociales = df_activo["Obra Social"].unique()
                     
                     if "fisico_inputs" not in st.session_state:
                         st.session_state["fisico_inputs"] = {}
 
-                    # Encabezado de la lista compacta
-                    header_cols = st.columns([3, 1, 1, 1, 1.5, 1])
-                    header_cols[0].markdown("**Obra Social**")
-                    header_cols[1].markdown("**CSV**")
-                    header_cols[2].markdown("**Vales**")
-                    header_cols[3].markdown("**Físico**")
-                    header_cols[4].markdown("**Conteo Real**")
-                    header_cols[5].markdown("**Estado**")
-                    st.markdown("---")
-
                     for os_nombre in obras_sociales:
                         df_os = df_activo[df_activo["Obra Social"] == os_nombre]
-                        total_sistema = len(df_os)
+                        total_csv = len(df_os)
                         vales_marcados = len(df_os[df_os["Es Vale"] == True])
-                        total_a_enviar = total_sistema - vales_marcados
+                        a_enviar = total_csv - vales_marcados
                         
                         key_fisico = f"fisico_{os_nombre}"
                         if key_fisico not in st.session_state["fisico_inputs"]:
-                            st.session_state["fisico_inputs"][key_fisico] = total_a_enviar
+                            st.session_state["fisico_inputs"][key_fisico] = a_enviar
+                        
+                        # Usamos st.container para agrupar cada renglón con un borde o fondo sutil si se desea
+                        with st.container():
+                            st.markdown(f"#### 🏥 {os_nombre}")
+                            col_tot, col_val, col_env, col_fis, col_est = st.columns([1.2, 1.2, 1.2, 2, 1.2])
                             
-                        row_cols = st.columns([3, 1, 1, 1, 1.5, 1])
-                        
-                        row_cols[0].write(os_nombre)
-                        row_cols[1].write(f"`{total_sistema}`")
-                        row_cols[2].write(f"`{vales_marcados}`")
-                        row_cols[3].write(f"**`{total_a_enviar}`**")
-                        
-                        conteo_fisico = row_cols[4].number_input(
-                            f"Físico {os_nombre}", 
-                            min_value=0, 
-                            value=st.session_state["fisico_inputs"][key_fisico], 
-                            key=key_fisico,
-                            label_visibility="collapsed"
-                        )
-                        
-                        if conteo_fisico != total_a_enviar:
-                            row_cols[5].warning("⚠️ Dif.")
-                        else:
-                            row_cols[5].success("✅ OK")
-
-                    st.markdown("---")
+                            col_tot.metric("Total", total_csv)
+                            col_val.metric("Vales", vales_marcados)
+                            col_env.metric("A enviar", a_enviar)
+                            
+                            conteo_fisico = col_fis.number_input(
+                                "Enviadas físicamente", 
+                                min_value=0, 
+                                max_value=total_csv,
+                                value=min(st.session_state["fisico_inputs"][key_fisico], a_enviar), 
+                                key=key_fisico
+                            )
+                            st.session_state["fisico_inputs"][key_fisico] = conteo_fisico
+                            
+                            if conteo_fisico != a_enviar:
+                                col_est.markdown("<br>", unsafe_allow_html=True)
+                                col_est.warning("⚠️ Dif.")
+                            else:
+                                col_est.markdown("<br>", unsafe_allow_html=True)
+                                col_est.success("✅ OK")
+                            
+                            st.markdown("---")
 
                     # 3. Listado detallado, buscador y marcado de Vales
                     st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
