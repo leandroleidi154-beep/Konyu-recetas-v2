@@ -486,7 +486,7 @@ else:
                                                 if c.strip("; \n")
                                             ]
 
-                                            # Filtrar palabras clave del sistema, códigos 'A', montos y espacios vacíos
+                                            # Filtrar palabras clave del sistema, códigos 'A', montos y abreviaturas técnicas
                                             cand = [
                                                 t.strip()
                                                 for t in posibles_titulos
@@ -496,7 +496,8 @@ else:
                                                 and "$" not in t
                                                 and "Tk" not in t
                                                 and "Os" not in t
-                                                and t.upper() != "PLAN"
+                                                and t.upper()
+                                                not in ["COMP", "REC", "NC/A", "PLAN"]
                                             ]
                                             if cand:
                                                 obra_social_actual = cand[0]
