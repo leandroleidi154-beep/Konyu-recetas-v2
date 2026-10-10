@@ -158,15 +158,24 @@ else:
                 lineas = texto_decodificado.splitlines()
                 
                 filas_datos = []
-                os_actual = "OBRA SOCIAL GENERAL"
+                obra_social_actual = "GENERAL"
                 
-                for linea in lineas:
-                    cols = linea.split(';')
-                    if len(cols) > 1 and cols[1].strip() != '':
-                        texto_linea = cols[1].strip()
-                        if "VALID." in texto_linea or "SANIDAD" in texto_linea or "PAGO" in texto_linea:
-                            os_actual = texto_linea.replace(';', '').strip()
+                # Recorrido inteligente buscando el nombre de la obra social ubicado justo antes del código (ej: A3250)
+                for i, linea in enumerate(lineas):
+                    cols = [c.strip() for c in linea.split(';')]
+                    
+                    # Detectar si la línea contiene un código de validación tipo 'A' seguido de números (ej: A3250, A4176)
+                    if len(cols) > 1 and cols[1].startswith('A') and cols[1][1:].isdigit():
+                        # La obra social está exactamente en la línea anterior
+                        if i > 0:
+                            linea_anterior = lineas[i - 1].split(';')
+                            for col_ant in linea_anterior:
+                                c_limpia = col_ant.strip('; ')
+                                if c_limpia and not c_limpia.startswith('A') and "Mandataria" not in c_limpia:
+                                    obra_social_actual = c_limpia
+                                    break
 
+                    # Detectar filas con tickets de recetas
                     for idx_c, val_c in enumerate(cols):
                         if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
                             plan_val = cols[0] if cols[0] != '' else 'PLAN GENERAL'
@@ -180,7 +189,7 @@ else:
                                 tt_val = "N/D"
                                 
                             filas_datos.append({
-                                "Obra Social": os_actual,
+                                "Obra Social": obra_social_actual,
                                 "Plan": plan_val,
                                 "Nro Ticket": nro_ticket,
                                 "T.T": tt_val,
@@ -189,26 +198,23 @@ else:
                             break
 
                 if filas_datos:
-                    df_base = pd.DataFrame(filas_datos).drop_duplicates(subset=["Nro Ticket"])
+                    df_base = pd.DataFrame(filas_datos)
+                    df_base.insert(0, 'ID_Fila', [f"REC_{i}" for i in range(len(df_base))])
                     
-                    # Guardar en session_state para mantener la selección de vales al interactuar
                     if "df_lote_activo" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
                         st.session_state["df_lote_activo"] = df_base
                         st.session_state["archivo_actual"] = archivo_subido.name
 
                     df_activo = st.session_state["df_lote_activo"]
 
-                    st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de tickets detectados: {len(df_activo)}")
+                    st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                     st.markdown("---")
 
                     # 2. Resumen dinámico por Obra Social
                     st.subheader("📊 Control por Obra Social")
                     
-                    # Calcular totales vs vales seleccionados
-                    resumen_os = []
                     obras_sociales = df_activo["Obra Social"].unique()
                     
-                    # Creamos un diccionario para almacenar los controles físicos ingresados
                     if "fisico_inputs" not in st.session_state:
                         st.session_state["fisico_inputs"] = {}
 
@@ -226,12 +232,11 @@ else:
                             st.write(f"• Vales retenidos: `{vales_marcados}`")
                             st.write(f"• **A enviar físico:** **`{total_a_enviar}`**")
                             
-                            # Control físico ingresado por el operador
                             key_fisico = f"fisico_{os_nombre}"
                             if key_fisico not in st.session_state["fisico_inputs"]:
                                 st.session_state["fisico_inputs"][key_fisico] = total_a_enviar
                                 
-                            conteo_fisico = st.number_input(f"Conteo físico real ({os_nombre})", min_value=0, value=st.session_state["fisico_inputs"][key_fisico], key=key_fisico)
+                            conteo_fisico = st.number_input(f"Conteo físico real", min_value=0, value=st.session_state["fisico_inputs"][key_fisico], key=key_fisico)
                             
                             if conteo_fisico != total_a_enviar:
                                 st.warning(f"⚠️ Dif. con físico ({conteo_fisico} vs {total_a_enviar})")
@@ -254,12 +259,12 @@ else:
                     st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
 
                     # Tabla interactiva con checkboxes para los vales
-                    # Usamos st.data_editor para permitir tildar la columna 'Es Vale' directamente
                     edited_df = st.data_editor(
-                        df_filtrado[["Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
+                        df_filtrado[["ID_Fital" if "ID_Fital" in df_filtrado.columns else "ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
+                            "ID_Fila": None,
                             "Es Vale": st.column_config.CheckboxColumn(
                                 "Retener como Vale 🎫",
                                 help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
@@ -269,11 +274,10 @@ else:
                         key="editor_vales"
                     )
 
-                    # Sincronizar los cambios del editor con el DataFrame principal en session_state
                     for index, row in edited_df.iterrows():
-                        ticket_id = row["Nro Ticket"]
+                        fila_id = row["ID_Fila"]
                         val_vale = row["Es Vale"]
-                        df_activo.loc[df_activo["Nro Ticket"] == ticket_id, "Es Vale"] = val_vale
+                        df_activo.loc[df_activo["ID_Fila"] == fila_id, "Es Vale"] = val_vale
 
                     st.markdown("---")
                     
