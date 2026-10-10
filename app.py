@@ -150,177 +150,182 @@ else:
         
         archivo_subido = st.file_uploader("Seleccioná el archivo CSV de recetas", type=["csv"])
         
+        # Botón para limpiar sesión si quiere re-cargar limpio
         if archivo_subido is not None:
+            if "archivo_actual" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
+                st.session_state["archivo_actual"] = archivo_subido.name
+                st.session_state.pop("df_lote_activo", None)
+                st.session_state.pop("fisico_inputs", None)
+
             try:
-                # Procesar archivo CSV
-                contenido_bytes = archivo_subido.getvalue()
-                texto_decodificado = contenido_bytes.decode('latin1')
-                lineas = texto_decodificado.splitlines()
-                
-                filas_datos = []
-                obra_social_actual = "GENERAL"
-                
-                for i, linea in enumerate(lineas):
-                    cols = [c.strip() for c in linea.split(';')]
+                # Procesar archivo CSV si no está en memoria
+                if "df_lote_activo" not in st.session_state:
+                    contenido_bytes = archivo_subido.getvalue()
+                    texto_decodificado = contenido_bytes.decode('latin1')
+                    lineas = texto_decodificado.splitlines()
                     
-                    if len(cols) > 1 and cols[1].startswith('A') and cols[1][1:].isdigit():
-                        if i > 0:
-                            linea_anterior = lineas[i - 1].split(';')
-                            for col_ant in linea_anterior:
-                                c_limpia = col_ant.strip('; ')
-                                if c_limpia and not c_limpia.startswith('A') and "Mandataria" not in c_limpia:
-                                    obra_social_actual = c_limpia
-                                    break
-
-                    for idx_c, val_c in enumerate(cols):
-                        if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
-                            plan_val = cols[0] if cols[0] != '' else 'PLAN GENERAL'
-                            nro_ticket = val_c
-                            tt_val = ""
-                            for siguiente in cols[idx_c+1:]:
-                                if len(siguiente) >= 10 and '-' in siguiente:
-                                    tt_val = siguiente
-                                    break
-                            if not tt_val:
-                                tt_val = "N/D"
-                                
-                            filas_datos.append({
-                                "Obra Social": obra_social_actual,
-                                "Plan": plan_val,
-                                "Nro Ticket": nro_ticket,
-                                "T.T": tt_val,
-                                "Es Vale": False
-                            })
-                            break
-
-                if filas_datos:
-                    df_base = pd.DataFrame(filas_datos)
-                    df_base.insert(0, 'ID_Fila', [f"REC_{i}" for i in range(len(df_base))])
+                    filas_datos = []
+                    obra_social_actual = "GENERAL"
                     
-                    if "df_lote_activo" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
+                    for i, linea in enumerate(lineas):
+                        cols = [c.strip() for c in linea.split(';')]
+                        
+                        if len(cols) > 1 and cols[1].startswith('A') and cols[1][1:].isdigit():
+                            if i > 0:
+                                linea_anterior = lineas[i - 1].split(';')
+                                for col_ant in linea_anterior:
+                                    c_limpia = col_ant.strip('; ')
+                                    if c_limpia and not c_limpia.startswith('A') and "Mandataria" not in c_limpia:
+                                        obra_social_actual = c_limpia
+                                        break
+
+                        for idx_c, val_c in enumerate(cols):
+                            if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
+                                plan_val = cols[0] if cols[0] != '' else 'PLAN GENERAL'
+                                nro_ticket = val_c
+                                tt_val = ""
+                                for siguiente in cols[idx_c+1:]:
+                                    if len(siguiente) >= 10 and '-' in siguiente:
+                                        tt_val = siguiente
+                                        break
+                                if not tt_val:
+                                    tt_val = "N/D"
+                                    
+                                filas_datos.append({
+                                    "Obra Social": obra_social_actual,
+                                    "Plan": plan_val,
+                                    "Nro Ticket": nro_ticket,
+                                    "T.T": tt_val,
+                                    "Es Vale": False
+                                })
+                                break
+
+                    if filas_datos:
+                        df_base = pd.DataFrame(filas_datos)
+                        df_base.insert(0, 'ID_Fila', [f"REC_{i}" for i in range(len(df_base))])
                         st.session_state["df_lote_activo"] = df_base
-                        st.session_state["archivo_actual"] = archivo_subido.name
+                    else:
+                        st.warning("No se pudieron extraer recetas automáticamente con este formato.")
+                        st.stop()
 
-                    df_activo = st.session_state["df_lote_activo"]
+                df_activo = st.session_state["df_lote_activo"]
 
-                    st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
-                    st.markdown("---")
+                st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
+                st.markdown("---")
 
-                    # Callback para actualizar el estado inmediatamente al hacer click en las casillas
-                    def actualizar_vales():
-                        if "editor_vales" in st.session_state and "edited_rows" in st.session_state["editor_vales"]:
-                            cambios = st.session_state["editor_vales"]["edited_rows"]
-                            for idx_fila_vis, datos_edit in cambios.items():
-                                if "Es Vale" in datos_edit:
-                                    if 'df_filtrado_temp' in st.session_state and idx_fila_vis < len(st.session_state['df_filtrado_temp']):
-                                        id_real = st.session_state['df_filtrado_temp'].iloc[idx_fila_vis]["ID_Fila"]
-                                        nuevo_estado = datos_edit["Es Vale"]
-                                        st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
-                                        
-                                        # Actualizar automáticamente el físico para que coincida con el nuevo "A enviar"
-                                        os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
-                                        df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
-                                        nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
-                                        st.session_state["fisico_inputs"][f"fisico_{os_afectada}"] = nuevo_a_enviar
+                # Callback para actualizar el estado inmediatamente al hacer click en las casillas
+                def actualizar_vales():
+                    if "editor_vales" in st.session_state and "edited_rows" in st.session_state["editor_vales"]:
+                        cambios = st.session_state["editor_vales"]["edited_rows"]
+                        for idx_fila_vis, datos_edit in cambios.items():
+                            if "Es Vale" in datos_edit:
+                                if 'df_filtrado_temp' in st.session_state and idx_fila_vis < len(st.session_state['df_filtrado_temp']):
+                                    id_real = st.session_state['df_filtrado_temp'].iloc[idx_fila_vis]["ID_Fila"]
+                                    nuevo_estado = datos_edit["Es Vale"]
+                                    st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
+                                    
+                                    # Forzar actualización inmediata del físico para que coincida con el nuevo "A enviar"
+                                    os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
+                                    df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
+                                    nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
+                                    st.session_state["fisico_inputs"][f"fisico_{os_afectada}"] = nuevo_a_enviar
 
-                    # 2. Resumen compacto horizontal con números destacados
-                    st.subheader("📊 Control por Obra Social")
+                # 2. Resumen compacto horizontal con números destacados
+                st.subheader("📊 Control por Obra Social")
+                
+                obras_sociales = df_activo["Obra Social"].unique()
+                
+                if "fisico_inputs" not in st.session_state:
+                    st.session_state["fisico_inputs"] = {}
+
+                for os_nombre in obras_sociales:
+                    df_os = df_activo[df_activo["Obra Social"] == os_nombre]
+                    total_csv = len(df_os)
+                    vales_marcados = len(df_os[df_os["Es Vale"] == True])
+                    a_enviar = total_csv - vales_marcados
                     
-                    obras_sociales = df_activo["Obra Social"].unique()
-                    
-                    if "fisico_inputs" not in st.session_state:
-                        st.session_state["fisico_inputs"] = {}
-
-                    for os_nombre in obras_sociales:
-                        df_os = df_activo[df_activo["Obra Social"] == os_nombre]
-                        total_csv = len(df_os)
-                        vales_marcados = len(df_os[df_os["Es Vale"] == True])
-                        a_enviar = total_csv - vales_marcados
-                        
-                        key_fisico = f"fisico_{os_nombre}"
-                        if key_fisico not in st.session_state["fisico_inputs"]:
+                    key_fisico = f"fisico_{os_nombre}"
+                    if key_fisico not in st.session_state["fisico_inputs"]:
+                        st.session_state["fisico_inputs"][key_fisico] = a_enviar
+                    else:
+                        # Forzar que el físico acompañe al A enviar si se acaban de marcar vales
+                        if st.session_state["fisico_inputs"][key_fisico] > a_enviar:
                             st.session_state["fisico_inputs"][key_fisico] = a_enviar
-                        else:
-                            # Sincronizamos el input físico si el usuario marcó un vale y estaba igual al total anterior
-                            if st.session_state["fisico_inputs"][key_fisico] > a_enviar and st.session_state["fisico_inputs"][key_fisico] == (a_enviar + 1):
-                                st.session_state["fisico_inputs"][key_fisico] = a_enviar
+                    
+                    # Renglón horizontal unificado
+                    with st.container():
+                        c_os, c_tot, c_val, c_env, c_fis_label, c_fis_input, c_est = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
                         
-                        # Renglón horizontal unificado
-                        with st.container():
-                            c_os, c_tot, c_val, c_env, c_fis_label, c_fis_input, c_est = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
-                            
-                            c_os.markdown(f"**{os_nombre}**")
-                            c_tot.markdown(f"Total: **{total_csv}**")
-                            c_val.markdown(f"Vales: **{vales_marcados}**")
-                            c_env.markdown(f"A enviar: **{a_enviar}**")
-                            
-                            c_fis_label.markdown("Enviadas físicamente:")
-                            
-                            conteo_fisico = c_fis_input.number_input(
-                                "Físico", 
-                                min_value=0, 
-                                max_value=total_csv,
-                                value=st.session_state["fisico_inputs"][key_fisico], 
-                                key=key_fisico,
-                                label_visibility="collapsed"
-                            )
-                            st.session_state["fisico_inputs"][key_fisico] = conteo_fisico
-                            
-                            if conteo_fisico != a_enviar:
-                                c_est.warning("⚠️")
-                            else:
-                                c_est.success("✅")
-                            
-                            st.markdown("---")
-
-                    # 3. Listado detallado, buscador y marcado de Vales
-                    st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
-                    
-                    busqueda = st.text_input("🔎 Buscar por Nro de Ticket o T.T.", placeholder="Ej: 0990-00043135 o 9909-00558021")
-                    
-                    df_filtrado = df_activo.copy()
-                    if busqueda:
-                        df_filtrado = df_filtrado[
-                            df_filtrado["Nro Ticket"].str.contains(busqueda, case=False, na=False) | 
-                            df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
-                        ]
-
-                    st.session_state['df_filtrado_temp'] = df_filtrado
-
-                    st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
-
-                    # Tabla interactiva con checkboxes para los vales
-                    st.data_editor(
-                        df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "ID_Fila": None,
-                            "Es Vale": st.column_config.CheckboxColumn(
-                                "Retener como Vale 🎫",
-                                help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
-                                default=False,
-                            )
-                        },
-                        key="editor_vales",
-                        on_change=actualizar_vales
-                    )
-
-                    st.markdown("---")
-                    
-                    # 4. Botón de Generar Lote
-                    nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
-                    
-                    if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
-                        if nombre_lote:
-                            total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
-                            total_envio_lote = len(df_activo) - total_vales_lote
-                            st.success(f"¡Lote '{nombre_lote}' generado con éxito para la fecha {fecha_recetas.strftime('%d/%m/%Y')}!")
-                            st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
+                        c_os.markdown(f"**{os_nombre}**")
+                        c_tot.markdown(f"Total: **{total_csv}**")
+                        c_val.markdown(f"Vales: **{vales_marcados}**")
+                        c_env.markdown(f"A enviar: **{a_enviar}**")
+                        
+                        c_fis_label.markdown("Enviadas físicamente:")
+                        
+                        conteo_fisico = c_fis_input.number_input(
+                            "Físico", 
+                            min_value=0, 
+                            max_value=total_csv,
+                            value=st.session_state["fisico_inputs"][key_fisico], 
+                            key=key_fisico,
+                            label_visibility="collapsed"
+                        )
+                        st.session_state["fisico_inputs"][key_fisico] = conteo_fisico
+                        
+                        if conteo_fisico != a_enviar:
+                            c_est.warning("⚠️")
                         else:
-                            st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
-                else:
-                    st.warning("No se pudieron extraer recetas automáticamente con este formato.")
+                            c_est.success("✅")
+                        
+                        st.markdown("---")
+
+                # 3. Listado detallado, buscador y marcado de Vales
+                st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
+                
+                busqueda = st.text_input("🔎 Buscar por Nro de Ticket o T.T.", placeholder="Ej: 0990-00043135 o 9909-00558021")
+                
+                df_filtrado = df_activo.copy()
+                if busqueda:
+                    df_filtrado = df_filtrado[
+                        df_filtrado["Nro Ticket"].str.contains(busqueda, case=False, na=False) | 
+                        df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
+                    ]
+
+                st.session_state['df_filtrado_temp'] = df_filtrado
+
+                st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
+
+                # Tabla interactiva con checkboxes para los vales
+                st.data_editor(
+                    df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "ID_Fila": None,
+                        "Es Vale": st.column_config.CheckboxColumn(
+                            "Retener como Vale 🎫",
+                            help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
+                            default=False,
+                        )
+                    },
+                    key="editor_vales",
+                    on_change=actualizar_vales
+                )
+
+                st.markdown("---")
+                
+                # 4. Botón de Generar Lote
+                nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
+                
+                if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
+                    if nombre_lote:
+                        total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
+                        total_envio_lote = len(df_activo) - total_vales_lote
+                        st.success(f"¡Lote '{nombre_lote}' generado con éxito para la fecha {fecha_recetas.strftime('%d/%m/%Y')}!")
+                        st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
+                    else:
+                        st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo CSV: {e}")
