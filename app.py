@@ -407,3 +407,77 @@ else:
                         df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                         use_container_width=True,
                         hide_index=True,
+                        column_config={
+                            "ID_Fila": None,
+                            "Es Vale": st.column_config.CheckboxColumn(
+                                "Retener como Vale 🎫",
+                                help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
+                                default=False,
+                            )
+                        },
+                        key="editor_vales",
+                        on_change=actualizar_vales
+                    )
+
+                    st.markdown("---")
+                    
+                    # 4. Botón de Generar Lote y Guardar en Supabase
+                    nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
+                    
+                    if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
+                        if nombre_lote:
+                            try:
+                                total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
+                                total_envio_lote = len(df_activo) - total_vales_lote
+                                
+                                # Construir resumen por obra social para el PDF
+                                filas_os_pdf = []
+                                for os_n in df_activo["Obra Social"].unique():
+                                    df_sub = df_activo[df_activo["Obra Social"] == os_n]
+                                    v_m = len(df_sub[df_sub["Es Vale"] == True])
+                                    filas_os_pdf.append({
+                                        "Obra Social": os_n,
+                                        "Total": len(df_sub),
+                                        "Vales": v_m,
+                                        "A Enviar": len(df_sub) - v_m
+                                    })
+                                df_resumen_os_pdf = pd.DataFrame(filas_os_pdf)
+                                df_vales_pdf = df_activo[df_activo["Es Vale"] == True][["Obra Social", "Plan", "Nro Ticket", "T.T"]]
+                                
+                                data_lote = {
+                                    "id_lote": nombre_lote,
+                                    "sucursal": user.get("nombre", "Sucursal"),
+                                    "fecha_carga": fecha_recetas.strftime("%Y-%m-%d"),
+                                    "estado": "Cerrado",
+                                    "observacion": f"Enviadas: {total_envio_lote} | Vales retenidos: {total_vales_lote}"
+                                }
+                                
+                                res_insert = supabase.table("lotes").insert(data_lote).execute()
+                                
+                                if res_insert:
+                                    st.session_state["lote_generado_exito"] = {
+                                        "nombre": nombre_lote,
+                                        "fecha": fecha_recetas.strftime('%d/%m/%Y'),
+                                        "total_envio": total_envio_lote,
+                                        "total_vales": total_vales_lote,
+                                        "resumen_os": df_resumen_os_pdf,
+                                        "df_vales": df_vales_pdf
+                                    }
+                                    st.rerun()
+                                else:
+                                    st.error("No se pudo confirmar el guardado en la base de datos.")
+                                    
+                            except Exception as e:
+                                st.error(f"Error al guardar el lote en Supabase: {e}")
+                        else:
+                            st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
+                        
+                except Exception as e:
+                    st.error(f"Error al procesar el archivo CSV: {e}")
+        
+    elif rol == "mutual":
+        st.header("🏥 Panel de Mutual / Obra Social")
+        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
+        
+    else:
+        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
