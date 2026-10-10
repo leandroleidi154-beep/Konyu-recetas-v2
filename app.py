@@ -458,97 +458,67 @@ else:
                         for k in keys_to_del:
                             st.session_state.pop(k, None)
 
-                    try:
+                   try:
                         if "df_lote_activo" not in st.session_state:
                             contenido_bytes = archivo_subido.getvalue()
-                            texto_decodificado = contenido_bytes.decode("latin1")
+                            texto_decodificado = contenido_bytes.decode('latin1')
                             lineas = texto_decodificado.splitlines()
-
+                            
                             filas_datos = []
                             obra_social_actual = "GENERAL"
-
+                            
                             for i, linea in enumerate(lineas):
-                                cols = [c.strip() for c in linea.split(";")]
-
+                                cols = [c.strip() for c in linea.split(';')]
+                                
                                 # Detectar encabezado de Obra Social (Ej: A3390, A0406, A3718, A3378, etc.)
-                                if (
-                                    len(cols) > 1
-                                    and cols[1].startswith("A")
-                                    and cols[1][1:].isdigit()
-                                ):
+                                if len(cols) > 1 and cols[1].startswith('A') and cols[1][1:].isdigit():
                                     # Miramos exclusivamente la línea anterior (offset 1) donde está el nombre real
                                     if i - 1 >= 0:
-                                        linea_prev = lineas[i - 1].split(";")
-                                        posibles_titulos = [
-                                            c.strip("; \n")
-                                            for c in linea_prev
-                                            if c.strip("; \n")
-                                        ]
-
+                                        linea_prev = lineas[i - 1].split(';')
+                                        posibles_titulos = [c.strip('; \n') for c in linea_prev if c.strip('; \n')]
+                                        
                                         cand = [
-                                            t.strip()
-                                            for t in posibles_titulos
+                                            t.strip() for t in posibles_titulos 
                                             if t.strip()
-                                            and not t.startswith("A")
-                                            and not t.isdigit()
-                                            and "Mandataria" not in t
-                                            and "$" not in t
-                                            and "Tk" not in t
-                                            and "Os" not in t
-                                            and t.upper()
-                                            not in ["COMP", "REC", "NC/A", "PLAN"]
+                                            and not (t.startswith('A') and len(t) < 6 and t[1:].isdigit()) # Solo descarta códigos cortos tipo A3390
+                                            and not t.isdigit() 
+                                            and "Mandataria" not in t 
+                                            and "$" not in t 
+                                            and "Tk" not in t 
+                                            and "Os" not in t 
+                                            and t.upper() not in ["COMP", "REC", "NC/A", "PLAN"]
                                         ]
                                         if cand:
                                             obra_social_actual = cand[0]
 
                                 # Extraer datos de la receta
                                 for idx_c, val_c in enumerate(cols):
-                                    if (
-                                        len(val_c) == 13
-                                        and val_c[:4].isdigit()
-                                        and "-" in val_c
-                                    ):
-                                        plan_val = (
-                                            cols[0]
-                                            if cols[0] != ""
-                                            and cols[0].upper() != "PLAN"
-                                            else "PLAN GENERAL"
-                                        )
+                                    if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
+                                        plan_val = cols[0] if cols[0] != '' and cols[0].upper() != 'PLAN' else 'PLAN GENERAL'
                                         nro_ticket = val_c
                                         tt_val = ""
-                                        for siguiente in cols[idx_c + 1 :]:
-                                            if (
-                                                len(siguiente) >= 10
-                                                and "-" in siguiente
-                                            ):
+                                        for siguiente in cols[idx_c+1:]:
+                                            if len(siguiente) >= 10 and '-' in siguiente:
                                                 tt_val = siguiente
                                                 break
                                         if not tt_val:
                                             tt_val = "N/D"
-
-                                        filas_datos.append(
-                                            {
-                                                "Obra Social": obra_social_actual,
-                                                "Plan": plan_val,
-                                                "Nro Ticket": nro_ticket,
-                                                "T.T": tt_val,
-                                                "Es Vale": False,
-                                            }
-                                        )
+                                            
+                                        filas_datos.append({
+                                            "Obra Social": obra_social_actual,
+                                            "Plan": plan_val,
+                                            "Nro Ticket": nro_ticket,
+                                            "T.T": tt_val,
+                                            "Es Vale": False
+                                        })
                                         break
 
                             if filas_datos:
                                 df_base = pd.DataFrame(filas_datos)
-                                df_base.insert(
-                                    0,
-                                    "ID_Fila",
-                                    [f"REC_{i}" for i in range(len(df_base))],
-                                )
+                                df_base.insert(0, 'ID_Fila', [f"REC_{i}" for i in range(len(df_base))])
                                 st.session_state["df_lote_activo"] = df_base
                             else:
-                                st.warning(
-                                    "No se pudieron extraer recetas automáticamente con este formato."
-                                )
+                                st.warning("No se pudieron extraer recetas automáticamente con este formato.")
                                 st.stop()
 
                         df_activo = st.session_state["df_lote_activo"]
