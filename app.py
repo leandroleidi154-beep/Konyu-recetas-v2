@@ -48,6 +48,68 @@ class PDFComprobante(FPDF):
         self.set_font("Arial", "I", 8)
         self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "C")
 
+def generar_pdf_bytes(sucursal, fecha_str, ref_lote, total_envio, total_vales, df_os_resumen, df_vales_det):
+    pdf = PDFComprobante(sucursal, fecha_str, ref_lote)
+    pdf.add_page()
+    
+    # 1. Cuadro de Resumen por Obra Social
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 7, "1. Resumen por Obra Social (Recetas Enviadas)", 0, 1, "L")
+    pdf.ln(1)
+    
+    pdf.set_font("Arial", "B", 9)
+    pdf.set_fill_color(230, 230, 230)
+    pdf.cell(90, 6, "Obra Social", 1, 0, "L", True)
+    pdf.cell(30, 6, "Total CSV", 1, 0, "C", True)
+    pdf.cell(30, 6, "Vales Retenidos", 1, 0, "C", True)
+    pdf.cell(40, 6, "A Enviar (Fisico)", 1, 1, "C", True)
+    
+    pdf.set_font("Arial", "", 9)
+    if not df_os_resumen.empty:
+        for _, row_os in df_os_resumen.iterrows():
+            os_txt = str(row_os["Obra Social"])[:45]
+            pdf.cell(90, 6, os_txt, 1, 0, "L")
+            pdf.cell(30, 6, str(row_os["Total"]), 1, 0, "C")
+            pdf.cell(30, 6, str(row_os["Vales"]), 1, 0, "C")
+            pdf.cell(40, 6, str(row_os["A Enviar"]), 1, 1, "C")
+    else:
+        pdf.cell(190, 6, "Detalle por obra social no disponible.", 1, 1, "C")
+        
+    pdf.ln(6)
+    
+    # 2. Cuadro de Vales Retenidos
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 7, "2. Detalle de Vales Retenidos (Pendientes en Sucursal)", 0, 1, "L")
+    pdf.ln(1)
+    
+    if not df_vales_det.empty:
+        pdf.set_font("Arial", "B", 8)
+        pdf.set_fill_color(240, 240, 240)
+        pdf.cell(60, 6, "Obra Social", 1, 0, "L", True)
+        pdf.cell(45, 6, "Plan", 1, 0, "L", True)
+        pdf.cell(42, 6, "Nro Ticket", 1, 0, "C", True)
+        pdf.cell(43, 6, "T.T.", 1, 1, "C", True)
+        
+        pdf.set_font("Arial", "", 8)
+        for _, row_v in df_vales_det.iterrows():
+            pdf.cell(60, 6, str(row_v["Obra Social"])[:30], 1, 0, "L")
+            pdf.cell(45, 6, str(row_v["Plan"])[:22], 1, 0, "L")
+            pdf.cell(42, 6, str(row_v["Nro Ticket"]), 1, 0, "C")
+            pdf.cell(43, 6, str(row_v["T.T"]), 1, 1, "C")
+    else:
+        pdf.set_font("Arial", "I", 9)
+        pdf.cell(190, 6, "No se registraron vales retenidos en este lote.", 1, 1, "C")
+        
+    pdf.ln(6)
+    
+    # 3. Totales finales encuadrados
+    pdf.set_font("Arial", "B", 10)
+    pdf.set_fill_color(245, 245, 245)
+    total_gral = total_envio + total_vales
+    pdf.cell(190, 8, f" TOTALES GENERALES:   Procesadas: {total_gral}  |  Enviadas: {total_envio}  |  Vales Retenidos: {total_vales}", 1, 1, "C", True)
+    
+    return pdf.output(dest='S').encode('latin1')
+
 # --- PANTALLA DE LOGIN ---
 if st.session_state["usuario_logueado"] is None:
     st.title("💊 Konyu Recetas - Iniciar Sesión")
@@ -197,65 +259,15 @@ else:
                 st.subheader("📄 Resumen y Comprobante para Mutuales")
                 st.info(f"Resumen: {lote_info['total_envio']} recetas enviadas a mutuales | {lote_info['total_vales']} recetas retenidas como vales.")
                 
-                pdf = PDFComprobante(user.get("nombre", "Sucursal"), lote_info['fecha'], lote_info['referencia'])
-                pdf.add_page()
-                
-                pdf.set_font("Arial", "B", 11)
-                pdf.cell(0, 7, "1. Resumen por Obra Social (Recetas Enviadas)", 0, 1, "L")
-                pdf.ln(1)
-                
-                pdf.set_font("Arial", "B", 9)
-                pdf.set_fill_color(230, 230, 230)
-                pdf.cell(90, 6, "Obra Social", 1, 0, "L", True)
-                pdf.cell(30, 6, "Total CSV", 1, 0, "C", True)
-                pdf.cell(30, 6, "Vales Retenidos", 1, 0, "C", True)
-                pdf.cell(40, 6, "A Enviar (Fisico)", 1, 1, "C", True)
-                
-                pdf.set_font("Arial", "", 9)
-                df_os_resumen = lote_info.get("resumen_os", pd.DataFrame())
-                if not df_os_resumen.empty:
-                    for _, row_os in df_os_resumen.iterrows():
-                        os_txt = str(row_os["Obra Social"])[:45]
-                        pdf.cell(90, 6, os_txt, 1, 0, "L")
-                        pdf.cell(30, 6, str(row_os["Total"]), 1, 0, "C")
-                        pdf.cell(30, 6, str(row_os["Vales"]), 1, 0, "C")
-                        pdf.cell(40, 6, str(row_os["A Enviar"]), 1, 1, "C")
-                else:
-                    pdf.cell(190, 6, "Detalle por obra social no disponible.", 1, 1, "C")
-                    
-                pdf.ln(6)
-                
-                pdf.set_font("Arial", "B", 11)
-                pdf.cell(0, 7, "2. Detalle de Vales Retenidos (Pendientes en Sucursal)", 0, 1, "L")
-                pdf.ln(1)
-                
-                df_vales_det = lote_info.get("df_vales", pd.DataFrame())
-                if not df_vales_det.empty:
-                    pdf.set_font("Arial", "B", 8)
-                    pdf.set_fill_color(240, 240, 240)
-                    pdf.cell(60, 6, "Obra Social", 1, 0, "L", True)
-                    pdf.cell(45, 6, "Plan", 1, 0, "L", True)
-                    pdf.cell(42, 6, "Nro Ticket", 1, 0, "C", True)
-                    pdf.cell(43, 6, "T.T.", 1, 1, "C", True)
-                    
-                    pdf.set_font("Arial", "", 8)
-                    for _, row_v in df_vales_det.iterrows():
-                        pdf.cell(60, 6, str(row_v["Obra Social"])[:30], 1, 0, "L")
-                        pdf.cell(45, 6, str(row_v["Plan"])[:22], 1, 0, "L")
-                        pdf.cell(42, 6, str(row_v["Nro Ticket"]), 1, 0, "C")
-                        pdf.cell(43, 6, str(row_v["T.T"]), 1, 1, "C")
-                else:
-                    pdf.set_font("Arial", "I", 9)
-                    pdf.cell(190, 6, "No se registraron vales retenidos en este lote.", 1, 1, "C")
-                    
-                pdf.ln(6)
-                
-                pdf.set_font("Arial", "B", 10)
-                pdf.set_fill_color(245, 245, 245)
-                total_gral = lote_info['total_envio'] + lote_info['total_vales']
-                pdf.cell(190, 8, f" TOTALES GENERALES:   Procesadas: {total_gral}  |  Enviadas: {lote_info['total_envio']}  |  Vales Retenidos: {lote_info['total_vales']}", 1, 1, "C", True)
-                
-                pdf_bytes = pdf.output(dest='S').encode('latin1')
+                pdf_bytes = generar_pdf_bytes(
+                    user.get("nombre", "Sucursal"),
+                    lote_info['fecha'],
+                    lote_info['referencia'],
+                    lote_info['total_envio'],
+                    lote_info['total_vales'],
+                    lote_info.get("resumen_os", pd.DataFrame()),
+                    lote_info.get("df_vales", pd.DataFrame())
+                )
                 
                 st.download_button(
                     label="📥 Descargar Resumen en PDF",
@@ -306,262 +318,16 @@ else:
 
                 if lote_existente:
                     st.warning(f"⚠️ **ATENCIÓN:** Ya existe un lote registrado para la sucursal **{sucursal_actual}** con la fecha **{fecha_str_fmt}**.")
-                    st.info(f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación previa:** {lote_existente.get('observacion')}")
+                    st.info(f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación:** {lote_existente.get('observacion')}")
                     
                     col_eliminar, col_seguir = st.columns(2)
                     with col_eliminar:
-                        if st.button("🗑️ Eliminar Lote Existente", type="secondary"):
+                        if st.button("🗑️ Eliminar Lote Existente y Continuar", type="secondary"):
                             try:
                                 supabase.table("lotes").delete().eq("id_lote", lote_existente.get('id_lote')).execute()
-                                st.success("¡Lote anterior eliminado con éxito! Ya podés continuar.")
+                                st.success("¡Lote anterior eliminado con éxito! Ya podés continuar cargando.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error al eliminar el lote: {e}")
                     with col_seguir:
-                        st.write("*(O continuá abajo para sobrescribirlo automáticamente al cerrar)*")
-
-                st.markdown("---")
-
-                # PASO 2: CARGA Y PROCESAMIENTO DEL ARCHIVO CSV
-                st.subheader("2️⃣ Paso 2: Subí el Reporte CSV de Recetas")
-                archivo_subido = st.file_uploader("Seleccioná el archivo CSV de recetas", type=["csv"])
-                
-                if archivo_subido is not None:
-                    if "archivo_actual" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
-                        st.session_state["archivo_actual"] = archivo_subido.name
-                        st.session_state.pop("df_lote_activo", None)
-                        keys_to_del = [k for k in st.session_state.keys() if k.startswith("fisico_")]
-                        for k in keys_to_del:
-                            st.session_state.pop(k, None)
-
-                    try:
-                        if "df_lote_activo" not in st.session_state:
-                            contenido_bytes = archivo_subido.getvalue()
-                            texto_decodificado = contenido_bytes.decode('latin1')
-                            lineas = texto_decodificado.splitlines()
-                            
-                            filas_datos = []
-                            obra_social_actual = "GENERAL"
-                            
-                            for i, linea in enumerate(lineas):
-                                cols = [c.strip() for c in linea.split(';')]
-                                
-                                if len(cols) > 1 and cols[1].startswith('A') and cols[1][1:].isdigit():
-                                    if i > 0:
-                                        linea_anterior = lineas[i - 1].split(';')
-                                        for col_ant in linea_anterior:
-                                            c_limpia = col_ant.strip('; ')
-                                            if c_limpia and not c_limpia.startswith('A') and "Mandataria" not in c_limpia:
-                                                obra_social_actual = c_limpia
-                                                break
-
-                                for idx_c, val_c in enumerate(cols):
-                                    if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
-                                        plan_val = cols[0] if cols[0] != '' else 'PLAN GENERAL'
-                                        nro_ticket = val_c
-                                        tt_val = ""
-                                        for siguiente in cols[idx_c+1:]:
-                                            if len(siguiente) >= 10 and '-' in siguiente:
-                                                tt_val = siguiente
-                                                break
-                                        if not tt_val:
-                                            tt_val = "N/D"
-                                            
-                                        filas_datos.append({
-                                            "Obra Social": obra_social_actual,
-                                            "Plan": plan_val,
-                                            "Nro Ticket": nro_ticket,
-                                            "T.T": tt_val,
-                                            "Es Vale": False
-                                        })
-                                        break
-
-                            if filas_datos:
-                                df_base = pd.DataFrame(filas_datos)
-                                df_base.insert(0, 'ID_Fila', [f"REC_{i}" for i in range(len(df_base))])
-                                st.session_state["df_lote_activo"] = df_base
-                            else:
-                                st.warning("No se pudieron extraer recetas automáticamente con este formato.")
-                                st.stop()
-
-                        df_activo = st.session_state["df_lote_activo"]
-
-                        st.success(f"¡Reporte cargado correctamente para el día {fecha_str_fmt}! Total de recetas detectadas: {len(df_activo)}")
-                        st.markdown("---")
-
-                        def actualizar_vales():
-                            if "editor_vales" in st.session_state and "edited_rows" in st.session_state["editor_vales"]:
-                                cambios = st.session_state["editor_vales"]["edited_rows"]
-                                for idx_fila_vis, datos_edit in cambios.items():
-                                    if "Es Vale" in datos_edit:
-                                        if 'df_filtrado_temp' in st.session_state and idx_fila_vis < len(st.session_state['df_filtrado_temp']):
-                                            id_real = st.session_state['df_filtrado_temp'].iloc[idx_fila_vis]["ID_Fila"]
-                                            nuevo_estado = datos_edit["Es Vale"]
-                                            st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
-                                            
-                                            os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
-                                            df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
-                                            nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
-                                            st.session_state[f"fisico_{os_afectada}"] = nuevo_a_enviar
-
-                        st.subheader("📊 Control por Obra Social")
-                        
-                        obras_sociales = df_activo["Obra Social"].unique()
-
-                        for os_nombre in obras_sociales:
-                            df_os = df_activo[df_activo["Obra Social"] == os_nombre]
-                            total_csv = len(df_os)
-                            vales_marcados = len(df_os[df_os["Es Vale"] == True])
-                            a_enviar = total_csv - vales_marcados
-                            
-                            key_fisico = f"fisico_{os_nombre}"
-                            if key_fisico not in st.session_state:
-                                st.session_state[key_fisico] = a_enviar
-                            
-                            with st.container():
-                                c_os, c_tot, c_val, c_env, c_fis_label, c_fis_input, c_est = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
-                                
-                                c_os.markdown(f"**{os_nombre}**")
-                                c_tot.markdown(f"Total: **{total_csv}**")
-                                c_val.markdown(f"Vales: **{vales_marcados}**")
-                                c_env.markdown(f"A enviar: **{a_enviar}**")
-                                
-                                c_fis_label.markdown("Enviadas físicamente:")
-                                
-                                conteo_fisico = c_fis_input.number_input(
-                                    "Físico", 
-                                    min_value=0, 
-                                    max_value=total_csv,
-                                    key=key_fisico,
-                                    label_visibility="collapsed"
-                                )
-                                
-                                if conteo_fisico != a_enviar:
-                                    c_est.warning("⚠️")
-                                else:
-                                    c_est.success("✅")
-                                
-                                st.markdown("---")
-
-                        st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
-                        
-                        busqueda = st.text_input("🔎 Buscar por Nro de Ticket o T.T.", placeholder="Ej: 0990-00043135 o 9909-00558021")
-                        
-                        df_filtrado = df_activo.copy()
-                        if busqueda:
-                            df_filtrado = df_filtrado[
-                                df_filtrado["Nro Ticket"].str.contains(busqueda, case=False, na=False) | 
-                                df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
-                            ]
-
-                        st.session_state['df_filtrado_temp'] = df_filtrado
-
-                        st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
-
-                        st.data_editor(
-                            df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "ID_Fila": None,
-                                "Es Vale": st.column_config.CheckboxColumn(
-                                    "Retener como Vale 🎫",
-                                    help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
-                                    default=False,
-                                )
-                            },
-                            key="editor_vales",
-                            on_change=actualizar_vales
-                        )
-
-                        st.markdown("---")
-                        
-                        referencia_usuario = st.text_input("📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)")
-                        
-                        if lote_existente:
-                            id_lote_final = lote_existente["id_lote"]
-                            btn_label = "⚠️ Sobrescribir y Actualizar Lote Existente"
-                        else:
-                            id_lote_final = f"LOTE-{sucursal_actual}-{fecha_recetas.strftime('%Y%m%d')}"
-                            btn_label = "🔒 Cerrar y Generar Lote para Mutuales"
-                        
-                        if st.button(btn_label, type="primary"):
-                            try:
-                                total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
-                                total_envio_lote = len(df_activo) - total_vales_lote
-                                
-                                filas_os_pdf = []
-                                for os_n in df_activo["Obra Social"].unique():
-                                    df_sub = df_activo[df_activo["Obra Social"] == os_n]
-                                    v_m = len(df_sub[df_sub["Es Vale"] == True])
-                                    filas_os_pdf.append({
-                                        "Obra Social": os_n,
-                                        "Total": len(df_sub),
-                                        "Vales": v_m,
-                                        "A Enviar": len(df_sub) - v_m
-                                    })
-                                df_resumen_os_pdf = pd.DataFrame(filas_os_pdf)
-                                df_vales_pdf = df_activo[df_activo["Es Vale"] == True][["Obra Social", "Plan", "Nro Ticket", "T.T"]]
-                                
-                                obs_final = f"Enviadas: {total_envio_lote} | Vales: {total_vales_lote}"
-                                if referencia_usuario:
-                                    obs_final += f" | Ref: {referencia_usuario}"
-
-                                data_lote = {
-                                    "id_lote": id_lote_final,
-                                    "sucursal": sucursal_actual,
-                                    "fecha_carga": fecha_str_db,
-                                    "estado": "Cerrado",
-                                    "observacion": obs_final
-                                }
-                                
-                                res_insert = supabase.table("lotes").upsert(data_lote).execute()
-                                
-                                if res_insert:
-                                    st.session_state["lote_generado_exito"] = {
-                                        "nombre": id_lote_final,
-                                        "fecha": fecha_str_fmt,
-                                        "referencia": referencia_usuario if referencia_usuario else "Sin referencia",
-                                        "total_envio": total_envio_lote,
-                                        "total_vales": total_vales_lote,
-                                        "resumen_os": df_resumen_os_pdf,
-                                        "df_vales": df_vales_pdf
-                                    }
-                                    st.rerun()
-                                else:
-                                    st.error("No se pudo confirmar el guardado en la base de datos.")
-                                    
-                            except Exception as e:
-                                st.error(f"Error al guardar el lote en Supabase: {e}")
-                            
-                    except Exception as e:
-                        st.error(f"Error al procesar el archivo CSV: {e}")
-
-        # Pestaña de Historial para la Sucursal
-        with tab_historial:
-            st.subheader("📜 Lotes Registrados de la Sucursal")
-            try:
-                res_suc = supabase.table("lotes")\
-                    .select("*")\
-                    .eq("sucursal", user.get("nombre"))\
-                    .order("fecha_carga", desc=True)\
-                    .execute()
-                
-                if res_suc.data:
-                    df_suc_h = pd.DataFrame(res_suc.data)
-                    st.dataframe(
-                        df_suc_h[["id_lote", "fecha_carga", "estado", "observacion", "created_at"]],
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:
-                    st.info("Aún no registraron cierres de lote para esta sucursal.")
-            except Exception as e:
-                st.error(f"Error al recuperar el historial: {e}")
-        
-    elif rol == "mutual":
-        st.header("🏥 Panel de Mutual / Obra Social")
-        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
-        
-    else:
-        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
+                        st.info("*(O seleccioná otra fecha arriba si preferís no borrarlo)*")
