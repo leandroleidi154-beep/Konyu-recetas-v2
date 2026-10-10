@@ -206,6 +206,18 @@ else:
                     st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                     st.markdown("---")
 
+                    # Callback para actualizar el estado inmediatamente al hacer click en las casillas
+                    def actualizar_vales():
+                        if "editor_vales" in st.session_state and "edited_rows" in st.session_state["editor_vales"]:
+                            cambios = st.session_state["editor_vales"]["edited_rows"]
+                            for idx_fila_vis, datos_edit in cambios.items():
+                                if "Es Vale" in datos_edit:
+                                    # Obtener el ID de la fila filtrada visible
+                                    if 'df_filtrado_temp' in st.session_state and idx_fila_vis < len(st.session_state['df_filtrado_temp']):
+                                        id_real = st.session_state['df_filtrado_temp'].iloc[idx_fila_vis]["ID_Fila"]
+                                        nuevo_estado = datos_edit["Es Vale"]
+                                        st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
+
                     # 2. Resumen compacto horizontal con números destacados
                     st.subheader("📊 Control por Obra Social")
                     
@@ -224,7 +236,7 @@ else:
                         if key_fisico not in st.session_state["fisico_inputs"]:
                             st.session_state["fisico_inputs"][key_fisico] = a_enviar
                         
-                        # Renglón horizontal unificado con números más notorios
+                        # Renglón horizontal unificado
                         with st.container():
                             c_os, c_tot, c_val, c_env, c_fis, c_est = st.columns([2.5, 1, 1, 1, 1.5, 0.8])
                             
@@ -255,10 +267,12 @@ else:
                             df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
                         ]
 
+                    st.session_state['df_filtrado_temp'] = df_filtrado
+
                     st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
 
-                    # Tabla interactiva con checkboxes para los vales
-                    edited_df = st.data_editor(
+                    # Tabla interactiva con callback de actualización inmediata
+                    st.data_editor(
                         df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                         use_container_width=True,
                         hide_index=True,
@@ -270,13 +284,9 @@ else:
                                 default=False,
                             )
                         },
-                        key="editor_vales"
+                        key="editor_vales",
+                        on_change=actualizar_vales
                     )
-
-                    for index, row in edited_df.iterrows():
-                        fila_id = row["ID_Fila"]
-                        val_vale = row["Es Vale"]
-                        df_activo.loc[df_activo["ID_Fila"] == fila_id, "Es Vale"] = val_vale
 
                     st.markdown("---")
                     
