@@ -145,20 +145,32 @@ else:
         st.header("🏪 Panel de Sucursal - Control y Generación de Lotes")
         st.write("Seleccioná la fecha correspondiente a las recetas y subí el reporte CSV para realizar el control físico y marcar vales.")
         
-        # 1. Selector de fecha de las recetas
-        fecha_recetas = st.date_input("📅 Fecha correspondiente a las recetas")
-        
+        col_fecha, col_reset = st.columns([3, 1])
+        with col_fecha:
+            fecha_recetas = st.date_input("📅 Fecha correspondiente a las recetas")
+        with col_reset:
+            st.write("")
+            st.write("")
+            if st.button("🔄 Reiniciar Datos", help="Limpia la selección de vales y restablece los valores"):
+                st.session_state.pop("df_lote_activo", None)
+                st.session_state.pop("archivo_actual", None)
+                # Limpiar claves de físico
+                keys_to_del = [k for k in st.session_state.keys() if k.startswith("fisico_")]
+                for k in keys_to_del:
+                    st.session_state.pop(k, None)
+                st.rerun()
+
         archivo_subido = st.file_uploader("Seleccioná el archivo CSV de recetas", type=["csv"])
         
-        # Botón para limpiar sesión si quiere re-cargar limpio
         if archivo_subido is not None:
             if "archivo_actual" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
                 st.session_state["archivo_actual"] = archivo_subido.name
                 st.session_state.pop("df_lote_activo", None)
-                st.session_state.pop("fisico_inputs", None)
+                keys_to_del = [k for k in st.session_state.keys() if k.startswith("fisico_")]
+                for k in keys_to_del:
+                    st.session_state.pop(k, None)
 
             try:
-                # Procesar archivo CSV si no está en memoria
                 if "df_lote_activo" not in st.session_state:
                     contenido_bytes = archivo_subido.getvalue()
                     texto_decodificado = contenido_bytes.decode('latin1')
@@ -213,7 +225,7 @@ else:
                 st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                 st.markdown("---")
 
-                # Callback para actualizar el estado inmediatamente al hacer click en las casillas
+                # Callback que fuerza la actualización sincrónica del widget number_input
                 def actualizar_vales():
                     if "editor_vales" in st.session_state and "edited_rows" in st.session_state["editor_vales"]:
                         cambios = st.session_state["editor_vales"]["edited_rows"]
@@ -224,19 +236,18 @@ else:
                                     nuevo_estado = datos_edit["Es Vale"]
                                     st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
                                     
-                                    # Forzar actualización inmediata del físico para que coincida con el nuevo "A enviar"
+                                    # Recalcular "A enviar" para la Obra Social afectada
                                     os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
                                     df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
                                     nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
-                                    st.session_state["fisico_inputs"][f"fisico_{os_afectada}"] = nuevo_a_enviar
+                                    
+                                    # Forzar la reescritura directa de la clave del number_input en session_state
+                                    st.session_state[f"fisico_{os_afectada}"] = nuevo_a_enviar
 
                 # 2. Resumen compacto horizontal con números destacados
                 st.subheader("📊 Control por Obra Social")
                 
                 obras_sociales = df_activo["Obra Social"].unique()
-                
-                if "fisico_inputs" not in st.session_state:
-                    st.session_state["fisico_inputs"] = {}
 
                 for os_nombre in obras_sociales:
                     df_os = df_activo[df_activo["Obra Social"] == os_nombre]
@@ -245,12 +256,10 @@ else:
                     a_enviar = total_csv - vales_marcados
                     
                     key_fisico = f"fisico_{os_nombre}"
-                    if key_fisico not in st.session_state["fisico_inputs"]:
-                        st.session_state["fisico_inputs"][key_fisico] = a_enviar
-                    else:
-                        # Forzar que el físico acompañe al A enviar si se acaban de marcar vales
-                        if st.session_state["fisico_inputs"][key_fisico] > a_enviar:
-                            st.session_state["fisico_inputs"][key_fisico] = a_enviar
+                    
+                    # Inicializar o actualizar si no fue tocado manualmente
+                    if key_fisico not in st.session_state:
+                        st.session_state[key_fisico] = a_enviar
                     
                     # Renglón horizontal unificado
                     with st.container():
@@ -267,11 +276,9 @@ else:
                             "Físico", 
                             min_value=0, 
                             max_value=total_csv,
-                            value=st.session_state["fisico_inputs"][key_fisico], 
                             key=key_fisico,
                             label_visibility="collapsed"
                         )
-                        st.session_state["fisico_inputs"][key_fisico] = conteo_fisico
                         
                         if conteo_fisico != a_enviar:
                             c_est.warning("⚠️")
