@@ -307,4 +307,12 @@ else:
                 else:
                     st.warning("No se pudieron extraer recetas automáticamente con este formato.")
                     
-            except
+            except Exception as e:
+                st.error(f"Error al procesar el archivo CSV: {e}")
+        
+    elif rol == "mutual":
+        st.header("🏥 Panel de Mutual / Obra Social")
+        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
+        
+    else:
+        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
