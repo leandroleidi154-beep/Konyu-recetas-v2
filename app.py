@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
+from datetime import datetime
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -154,7 +155,6 @@ else:
             if st.button("🔄 Reiniciar Datos", help="Limpia la selección de vales y restablece los valores"):
                 st.session_state.pop("df_lote_activo", None)
                 st.session_state.pop("archivo_actual", None)
-                # Limpiar claves de físico
                 keys_to_del = [k for k in st.session_state.keys() if k.startswith("fisico_")]
                 for k in keys_to_del:
                     st.session_state.pop(k, None)
@@ -225,7 +225,6 @@ else:
                 st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                 st.markdown("---")
 
-                # Callback que fuerza la actualización sincrónica del widget number_input
                 def actualizar_vales():
                     if "editor_vales" in st.session_state and "edited_rows" in st.session_state["editor_vales"]:
                         cambios = st.session_state["editor_vales"]["edited_rows"]
@@ -236,12 +235,9 @@ else:
                                     nuevo_estado = datos_edit["Es Vale"]
                                     st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
                                     
-                                    # Recalcular "A enviar" para la Obra Social afectada
                                     os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
                                     df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
                                     nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
-                                    
-                                    # Forzar la reescritura directa de la clave del number_input en session_state
                                     st.session_state[f"fisico_{os_afectada}"] = nuevo_a_enviar
 
                 # 2. Resumen compacto horizontal con números destacados
@@ -256,12 +252,9 @@ else:
                     a_enviar = total_csv - vales_marcados
                     
                     key_fisico = f"fisico_{os_nombre}"
-                    
-                    # Inicializar o actualizar si no fue tocado manualmente
                     if key_fisico not in st.session_state:
                         st.session_state[key_fisico] = a_enviar
                     
-                    # Renglón horizontal unificado
                     with st.container():
                         c_os, c_tot, c_val, c_env, c_fis_label, c_fis_input, c_est = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
                         
@@ -303,7 +296,6 @@ else:
 
                 st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
 
-                # Tabla interactiva con checkboxes para los vales
                 st.data_editor(
                     df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                     use_container_width=True,
@@ -322,17 +314,39 @@ else:
 
                 st.markdown("---")
                 
-                # 4. Botón de Generar Lote
+                # 4. Botón de Generar Lote y Guardar en Supabase
                 nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
                 
                 if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
                     if nombre_lote:
-                        total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
-                        total_envio_lote = len(df_activo) - total_vales_lote
-                        st.success(f"¡Lote '{nombre_lote}' generado con éxito para la fecha {fecha_recetas.strftime('%d/%m/%Y')}!")
-                        st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
+                        try:
+                            total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
+                            total_envio_lote = len(df_activo) - total_vales_lote
+                            
+                            # Datos a insertar en la tabla 'lotes' de Supabase
+                            data_lote = {
+                                "id_lote": nombre_lote,
+                                "sucursal": user.get("nombre", "Sucursal"),
+                                "fecha_carga": fecha_recetas.strftime("%Y-%m-%d"),
+                                "estado": "Cerrado",
+                                "observacion": f"Enviadas: {total_envio_lote} | Vales retenidos: {total_vales_lote}"
+                            }
+                            
+                            # Insertar en Supabase
+                            res_insert = supabase.table("lotes").insert(data_lote).execute()
+                            
+                            if res_insert:
+                                st.success(f"¡Lote '{nombre_lote}' guardado y cerrado con éxito en Supabase!")
+                                st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
+                            else:
+                                st.error("No se pudo confirmar el guardado en la base de datos.")
+                                
+                        except Exception as e:
+                            st.error(f"Error al guardar el lote en Supabase: {e}")
                     else:
                         st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
+                else:
+                    st.warning("No se pudieron extraer recetas automáticamente con este formato.")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo CSV: {e}")
