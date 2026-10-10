@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime
+from fpdf import FPDF
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -155,6 +156,7 @@ else:
             if st.button("🔄 Reiniciar Datos", help="Limpia la selección de vales y restablece los valores"):
                 st.session_state.pop("df_lote_activo", None)
                 st.session_state.pop("archivo_actual", None)
+                st.session_state.pop("lote_generado_exito", None)
                 keys_to_del = [k for k in st.session_state.keys() if k.startswith("fisico_")]
                 for k in keys_to_del:
                     st.session_state.pop(k, None)
@@ -166,6 +168,7 @@ else:
             if "archivo_actual" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
                 st.session_state["archivo_actual"] = archivo_subido.name
                 st.session_state.pop("df_lote_activo", None)
+                st.session_state.pop("lote_generado_exito", None)
                 keys_to_del = [k for k in st.session_state.keys() if k.startswith("fisico_")]
                 for k in keys_to_del:
                     st.session_state.pop(k, None)
@@ -256,104 +259,4 @@ else:
                         st.session_state[key_fisico] = a_enviar
                     
                     with st.container():
-                        c_os, c_tot, c_val, c_env, c_fis_label, c_fis_input, c_est = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
-                        
-                        c_os.markdown(f"**{os_nombre}**")
-                        c_tot.markdown(f"Total: **{total_csv}**")
-                        c_val.markdown(f"Vales: **{vales_marcados}**")
-                        c_env.markdown(f"A enviar: **{a_enviar}**")
-                        
-                        c_fis_label.markdown("Enviadas físicamente:")
-                        
-                        conteo_fisico = c_fis_input.number_input(
-                            "Físico", 
-                            min_value=0, 
-                            max_value=total_csv,
-                            key=key_fisico,
-                            label_visibility="collapsed"
-                        )
-                        
-                        if conteo_fisico != a_enviar:
-                            c_est.warning("⚠️")
-                        else:
-                            c_est.success("✅")
-                        
-                        st.markdown("---")
-
-                # 3. Listado detallado, buscador y marcado de Vales
-                st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
-                
-                busqueda = st.text_input("🔎 Buscar por Nro de Ticket o T.T.", placeholder="Ej: 0990-00043135 o 9909-00558021")
-                
-                df_filtrado = df_activo.copy()
-                if busqueda:
-                    df_filtrado = df_filtrado[
-                        df_filtrado["Nro Ticket"].str.contains(busqueda, case=False, na=False) | 
-                        df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
-                    ]
-
-                st.session_state['df_filtrado_temp'] = df_filtrado
-
-                st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
-
-                st.data_editor(
-                    df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "ID_Fila": None,
-                        "Es Vale": st.column_config.CheckboxColumn(
-                            "Retener como Vale 🎫",
-                            help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
-                            default=False,
-                        )
-                    },
-                    key="editor_vales",
-                    on_change=actualizar_vales
-                )
-
-                st.markdown("---")
-                
-                # 4. Botón de Generar Lote y Guardar en Supabase
-                nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
-                
-                if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
-                    if nombre_lote:
-                        try:
-                            total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
-                            total_envio_lote = len(df_activo) - total_vales_lote
-                            
-                            # Datos a insertar en la tabla 'lotes' de Supabase
-                            data_lote = {
-                                "id_lote": nombre_lote,
-                                "sucursal": user.get("nombre", "Sucursal"),
-                                "fecha_carga": fecha_recetas.strftime("%Y-%m-%d"),
-                                "estado": "Cerrado",
-                                "observacion": f"Enviadas: {total_envio_lote} | Vales retenidos: {total_vales_lote}"
-                            }
-                            
-                            # Insertar en Supabase
-                            res_insert = supabase.table("lotes").insert(data_lote).execute()
-                            
-                            if res_insert:
-                                st.success(f"¡Lote '{nombre_lote}' guardado y cerrado con éxito en Supabase!")
-                                st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
-                            else:
-                                st.error("No se pudo confirmar el guardado en la base de datos.")
-                                
-                        except Exception as e:
-                            st.error(f"Error al guardar el lote en Supabase: {e}")
-                    else:
-                        st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
-                else:
-                    st.warning("No se pudieron extraer recetas automáticamente con este formato.")
-                    
-            except Exception as e:
-                st.error(f"Error al procesar el archivo CSV: {e}")
-        
-    elif rol == "mutual":
-        st.header("🏥 Panel de Mutual / Obra Social")
-        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
-        
-    else:
-        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
+                        c_os, c_tot, c_val, c_env, c_fis_label, c_fis_
