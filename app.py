@@ -212,11 +212,16 @@ else:
                             cambios = st.session_state["editor_vales"]["edited_rows"]
                             for idx_fila_vis, datos_edit in cambios.items():
                                 if "Es Vale" in datos_edit:
-                                    # Obtener el ID de la fila filtrada visible
                                     if 'df_filtrado_temp' in st.session_state and idx_fila_vis < len(st.session_state['df_filtrado_temp']):
                                         id_real = st.session_state['df_filtrado_temp'].iloc[idx_fila_vis]["ID_Fila"]
                                         nuevo_estado = datos_edit["Es Vale"]
                                         st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
+                                        
+                                        # Sincronizar automáticamente el físico con el nuevo "A enviar" para que no quede obsoleto
+                                        os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
+                                        df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
+                                        nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
+                                        st.session_state["fisico_inputs"][f"fisico_{os_afectada}"] = nuevo_a_enviar
 
                     # 2. Resumen compacto horizontal con números destacados
                     st.subheader("📊 Control por Obra Social")
@@ -238,14 +243,23 @@ else:
                         
                         # Renglón horizontal unificado
                         with st.container():
-                            c_os, c_tot, c_val, c_env, c_fis, c_est = st.columns([2.5, 1, 1, 1, 1.5, 0.8])
+                            c_os, c_tot, c_val, c_env, c_fis_label, c_fis_input, c_est = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
                             
                             c_os.markdown(f"**{os_nombre}**")
                             c_tot.markdown(f"Total: **{total_csv}**")
                             c_val.markdown(f"Vales: **{vales_marcados}**")
                             c_env.markdown(f"A enviar: **{a_enviar}**")
                             
-                            conteo_fisico = c_fis.number_input("Físico", min_value=0, max_value=total_csv, value=min(st.session_state["fisico_inputs"][key_fisico], a_enviar), key=key_fisico, label_visibility="collapsed")
+                            c_fis_label.markdown("Enviadas físicamente:")
+                            
+                            conteo_fisico = c_fis_input.number_input(
+                                "Físico", 
+                                min_value=0, 
+                                max_value=total_csv,
+                                value=min(st.session_state["fisico_inputs"][key_fisico], a_enviar), 
+                                key=key_fisico,
+                                label_visibility="collapsed"
+                            )
                             st.session_state["fisico_inputs"][key_fisico] = conteo_fisico
                             
                             if conteo_fisico != a_enviar:
@@ -271,7 +285,7 @@ else:
 
                     st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
 
-                    # Tabla interactiva con callback de actualización inmediata
+                    # Tabla interactiva con checkboxes para los vales
                     st.data_editor(
                         df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                         use_container_width=True,
