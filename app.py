@@ -486,12 +486,13 @@ else:
                                                 if c.strip("; \n")
                                             ]
 
-                                            # Filtrar palabras clave del sistema, códigos 'A', montos y abreviaturas técnicas
+                                            # Filtrar palabras clave, códigos 'A', montos, abreviaturas y números sueltos
                                             cand = [
                                                 t.strip()
                                                 for t in posibles_titulos
                                                 if t.strip()
                                                 and not t.startswith("A")
+                                                and not t.isdigit()  # Evita agarrar números sueltos como 6 o 102
                                                 and "Mandataria" not in t
                                                 and "$" not in t
                                                 and "Tk" not in t
