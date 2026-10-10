@@ -405,7 +405,7 @@ else:
                     if res_check.data and len(res_check.data) > 0:
                         lote_existente = res_check.data[0]
                 except Exception as e:
-                    pass  # Evita que un error de red bloquee la interfaz
+                    pass
 
                 if lote_existente:
                     st.warning(
@@ -767,3 +767,69 @@ else:
 
                     except Exception as e:
                         st.error(f"Error al procesar el archivo CSV: {e}")
+
+        # Pestaña de Historial con opción de Reimprimir PDF (Panel de Sucursal)
+        with tab_historial:
+            st.subheader("📜 Lotes Registrados y Reimpresión de Comprobantes")
+            try:
+                res_suc = (
+                    supabase.table("lotes")
+                    .select("*")
+                    .order("fecha_carga", desc=True)
+                    .execute()
+                )
+
+                if res_suc.data and len(res_suc.data) > 0:
+                    for lote_h in res_suc.data:
+                        with st.expander(
+                            f"📦 Sucursal: {lote_h.get('sucursal')} — Fecha: {lote_h.get('fecha_carga')} — Ref: {lote_h.get('observacion')}"
+                        ):
+                            col_info, col_btn = st.columns([3, 1])
+                            with col_info:
+                                st.write(
+                                    f"**Identificador:** `{lote_h.get('id_lote')}`"
+                                )
+                                st.write(f"**Sucursal:** {lote_h.get('sucursal')}")
+                                st.write(
+                                    f"**Fecha de carga / recetas:** {lote_h.get('fecha_carga')}"
+                                )
+                                st.write(
+                                    f"**Observaciones:** {lote_h.get('observacion')}"
+                                )
+                            with col_btn:
+                                st.write("")
+                                if st.button(
+                                    "📥 Reimprimir PDF",
+                                    key=f"reimp_suc_{lote_h.get('id_lote')}",
+                                ):
+                                    pdf_reimp_bytes = generar_pdf_bytes(
+                                        str(lote_h.get("sucursal")),
+                                        str(lote_h.get("fecha_carga")),
+                                        str(lote_h.get("observacion")),
+                                        0,
+                                        0,
+                                        pd.DataFrame(),
+                                        pd.DataFrame(),
+                                    )
+                                    st.download_button(
+                                        label="💾 Descargar Archivo PDF",
+                                        data=pdf_reimp_bytes,
+                                        file_name=f"Historial_Lote_{lote_h.get('fecha_carga')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_suc_{lote_h.get('id_lote')}",
+                                    )
+                else:
+                    st.info(
+                        "Aún no se registraron cierres de lote en la base de datos."
+                    )
+            except Exception as e:
+                st.error(f"Error al recuperar el historial: {e}")
+
+    elif rol == "mutual":
+        st.header("🏥 Panel de Mutual / Obra Social")
+        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
+
+    else:
+        st.warning(
+            "El usuario actual no tiene un rol válido asignado en la base de datos."
+        )
