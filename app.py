@@ -160,13 +160,10 @@ else:
                 filas_datos = []
                 obra_social_actual = "GENERAL"
                 
-                # Recorrido inteligente buscando el nombre de la obra social ubicado justo antes del código (ej: A3250)
                 for i, linea in enumerate(lineas):
                     cols = [c.strip() for c in linea.split(';')]
                     
-                    # Detectar si la línea contiene un código de validación tipo 'A' seguido de números (ej: A3250, A4176)
                     if len(cols) > 1 and cols[1].startswith('A') and cols[1][1:].isdigit():
-                        # La obra social está exactamente en la línea anterior
                         if i > 0:
                             linea_anterior = lineas[i - 1].split(';')
                             for col_ant in linea_anterior:
@@ -175,7 +172,6 @@ else:
                                     obra_social_actual = c_limpia
                                     break
 
-                    # Detectar filas con tickets de recetas
                     for idx_c, val_c in enumerate(cols):
                         if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
                             plan_val = cols[0] if cols[0] != '' else 'PLAN GENERAL'
@@ -210,39 +206,55 @@ else:
                     st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                     st.markdown("---")
 
-                    # 2. Resumen dinámico por Obra Social
-                    st.subheader("📊 Control por Obra Social")
+                    # 2. Resumen en formato de lista y renglones compactos
+                    st.subheader("📊 Control por Obra Social (Resumen)")
                     
                     obras_sociales = df_activo["Obra Social"].unique()
                     
                     if "fisico_inputs" not in st.session_state:
                         st.session_state["fisico_inputs"] = {}
 
-                    cols_resumen = st.columns(min(len(obras_sociales), 3) if len(obras_sociales) > 0 else 1)
-                    
-                    for idx, os_nombre in enumerate(obras_sociales):
+                    # Encabezado de la lista compacta
+                    header_cols = st.columns([3, 1, 1, 1, 1.5, 1])
+                    header_cols[0].markdown("**Obra Social**")
+                    header_cols[1].markdown("**CSV**")
+                    header_cols[2].markdown("**Vales**")
+                    header_cols[3].markdown("**Físico**")
+                    header_cols[4].markdown("**Conteo Real**")
+                    header_cols[5].markdown("**Estado**")
+                    st.markdown("---")
+
+                    for os_nombre in obras_sociales:
                         df_os = df_activo[df_activo["Obra Social"] == os_nombre]
                         total_sistema = len(df_os)
                         vales_marcados = len(df_os[df_os["Es Vale"] == True])
                         total_a_enviar = total_sistema - vales_marcados
                         
-                        with cols_resumen[idx % len(cols_resumen)]:
-                            st.markdown(f"**{os_nombre}**")
-                            st.write(f"• Detectadas en CSV: `{total_sistema}`")
-                            st.write(f"• Vales retenidos: `{vales_marcados}`")
-                            st.write(f"• **A enviar físico:** **`{total_a_enviar}`**")
+                        key_fisico = f"fisico_{os_nombre}"
+                        if key_fisico not in st.session_state["fisico_inputs"]:
+                            st.session_state["fisico_inputs"][key_fisico] = total_a_enviar
                             
-                            key_fisico = f"fisico_{os_nombre}"
-                            if key_fisico not in st.session_state["fisico_inputs"]:
-                                st.session_state["fisico_inputs"][key_fisico] = total_a_enviar
-                                
-                            conteo_fisico = st.number_input(f"Conteo físico real", min_value=0, value=st.session_state["fisico_inputs"][key_fisico], key=key_fisico)
-                            
-                            if conteo_fisico != total_a_enviar:
-                                st.warning(f"⚠️ Dif. con físico ({conteo_fisico} vs {total_a_enviar})")
-                            else:
-                                st.success("✅ Conteo OK")
-                            st.markdown("---")
+                        row_cols = st.columns([3, 1, 1, 1, 1.5, 1])
+                        
+                        row_cols[0].write(os_nombre)
+                        row_cols[1].write(f"`{total_sistema}`")
+                        row_cols[2].write(f"`{vales_marcados}`")
+                        row_cols[3].write(f"**`{total_a_enviar}`**")
+                        
+                        conteo_fisico = row_cols[4].number_input(
+                            f"Físico {os_nombre}", 
+                            min_value=0, 
+                            value=st.session_state["fisico_inputs"][key_fisico], 
+                            key=key_fisico,
+                            label_visibility="collapsed"
+                        )
+                        
+                        if conteo_fisico != total_a_enviar:
+                            row_cols[5].warning("⚠️ Dif.")
+                        else:
+                            row_cols[5].success("✅ OK")
+
+                    st.markdown("---")
 
                     # 3. Listado detallado, buscador y marcado de Vales
                     st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
@@ -260,7 +272,7 @@ else:
 
                     # Tabla interactiva con checkboxes para los vales
                     edited_df = st.data_editor(
-                        df_filtrado[["ID_Fital" if "ID_Fital" in df_filtrado.columns else "ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
+                        df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
@@ -295,12 +307,4 @@ else:
                 else:
                     st.warning("No se pudieron extraer recetas automáticamente con este formato.")
                     
-            except Exception as e:
-                st.error(f"Error al procesar el archivo CSV: {e}")
-        
-    elif rol == "mutual":
-        st.header("🏥 Panel de Mutual / Obra Social")
-        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
-        
-    else:
-        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
+            except
