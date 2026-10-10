@@ -481,16 +481,17 @@ else:
                                         if i - offset >= 0:
                                             linea_prev = lineas[i - offset].split(";")
                                             posibles_titulos = [
-                                                c.strip("; ")
+                                                c.strip("; \n")
                                                 for c in linea_prev
-                                                if c.strip("; ")
+                                                if c.strip("; \n")
                                             ]
 
-                                            # Filtrar palabras clave del sistema, códigos 'A' y montos monetarios ($Tk)
+                                            # Filtrar palabras clave del sistema, códigos 'A', montos y espacios vacíos
                                             cand = [
-                                                t
+                                                t.strip()
                                                 for t in posibles_titulos
-                                                if not t.startswith("A")
+                                                if t.strip()
+                                                and not t.startswith("A")
                                                 and "Mandataria" not in t
                                                 and "$" not in t
                                                 and "Tk" not in t
