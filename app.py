@@ -189,8 +189,6 @@ else:
         tab_cierre, tab_historial = st.tabs(["🔒 Cierre de Lote", "📜 Historial de Lotes"])
         
         with tab_cierre:
-            st.write("Seleccioná la fecha correspondiente a las recetas y subí el reporte CSV para realizar el control físico y marcar vales.")
-            
             # Si ya se generó un lote con éxito
             if "lote_generado_exito" in st.session_state:
                 lote_info = st.session_state["lote_generado_exito"]
@@ -274,6 +272,9 @@ else:
                     st.session_state["usuario_logueado"] = u_actual
                     st.rerun()
             else:
+                # PASO 1: SELECCIÓN DE FECHA Y COMPROBACIÓN DE LOTE PREVIO
+                st.subheader("1️⃣ Paso 1: Seleccioná la Fecha de las Recetas")
+                
                 col_fecha, col_reset = st.columns([3, 1])
                 with col_fecha:
                     fecha_recetas = st.date_input("📅 Fecha correspondiente a las recetas")
@@ -286,19 +287,32 @@ else:
                         st.session_state["usuario_logueado"] = u_actual
                         st.rerun()
 
-                # --- VALIDACIÓN DE LOTE EXISTENTE POR FECHA ---
-                id_lote_automatico = f"LOTE-{user.get('nombre', 'SUC')}-{fecha_recetas.strftime('%Y%m%d')}"
-                
-                lote_existente = False
+                fecha_str_db = fecha_recetas.strftime("%Y-%m-%d")
+                fecha_str_fmt = fecha_recetas.strftime("%d/%m/%Y")
+                sucursal_actual = user.get("nombre", "Sucursal")
+
+                lote_existente = None
                 try:
-                    res_check = supabase.table("lotes").select("*").eq("id_lote", id_lote_automatico).execute()
+                    res_check = supabase.table("lotes")\
+                        .select("*")\
+                        .eq("sucursal", sucursal_actual)\
+                        .eq("fecha_carga", fecha_str_db)\
+                        .execute()
+                    
                     if res_check.data and len(res_check.data) > 0:
-                        lote_existente = True
-                        st.warning(f"⚠️ Ya existe un lote guardado para la sucursal **{user.get('nombre')}** en la fecha **{fecha_recetas.strftime('%d/%m/%Y')}**.")
-                        st.info("Si cerrás el lote con este archivo, se **actualizará y reemplazará** el registro previo en la base de datos.")
+                        lote_existente = res_check.data[0]
                 except Exception as e:
                     pass
 
+                if lote_existente:
+                    st.warning(f"⚠️ **ATENCIÓN:** Ya existe un lote registrado para la sucursal **{sucursal_actual}** con la fecha **{fecha_str_fmt}**.")
+                    st.info(f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación previa:** {lote_existente.get('observacion')}")
+                    st.write("Podés cambiar la fecha arriba o continuar para **sobrescribir y actualizar** el lote de esta fecha.")
+
+                st.markdown("---")
+
+                # PASO 2: CARGA Y PROCESAMIENTO DEL ARCHIVO CSV
+                st.subheader("2️⃣ Paso 2: Subí el Reporte CSV de Recetas")
                 archivo_subido = st.file_uploader("Seleccioná el archivo CSV de recetas", type=["csv"])
                 
                 if archivo_subido is not None:
@@ -361,7 +375,7 @@ else:
 
                         df_activo = st.session_state["df_lote_activo"]
 
-                        st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
+                        st.success(f"¡Reporte cargado correctamente para el día {fecha_str_fmt}! Total de recetas detectadas: {len(df_activo)}")
                         st.markdown("---")
 
                         def actualizar_vales():
@@ -453,7 +467,13 @@ else:
                         
                         referencia_usuario = st.text_input("📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)")
                         
-                        btn_label = "⚠️ Sobrescribir y Cerrar Lote" if lote_existente else "🔒 Cerrar y Generar Lote para Mutuales"
+                        # Generamos el id de lote automático si es nuevo, o reusamos el existente
+                        if lote_existente:
+                            id_lote_final = lote_existente["id_lote"]
+                            btn_label = "⚠️ Sobrescribir y Actualizar Lote Existente"
+                        else:
+                            id_lote_final = f"LOTE-{sucursal_actual}-{fecha_recetas.strftime('%Y%m%d')}"
+                            btn_label = "🔒 Cerrar y Generar Lote para Mutuales"
                         
                         if st.button(btn_label, type="primary"):
                             try:
@@ -478,20 +498,19 @@ else:
                                     obs_final += f" | Ref: {referencia_usuario}"
 
                                 data_lote = {
-                                    "id_lote": id_lote_automatico,
-                                    "sucursal": user.get("nombre", "Sucursal"),
-                                    "fecha_carga": fecha_recetas.strftime("%Y-%m-%d"),
+                                    "id_lote": id_lote_final,
+                                    "sucursal": sucursal_actual,
+                                    "fecha_carga": fecha_str_db,
                                     "estado": "Cerrado",
                                     "observacion": obs_final
                                 }
                                 
-                                # Usamos upsert para actualizar si ya existe o insertar si es nuevo
                                 res_insert = supabase.table("lotes").upsert(data_lote).execute()
                                 
                                 if res_insert:
                                     st.session_state["lote_generado_exito"] = {
-                                        "nombre": id_lote_automatico,
-                                        "fecha": fecha_recetas.strftime('%d/%m/%Y'),
+                                        "nombre": id_lote_final,
+                                        "fecha": fecha_str_fmt,
                                         "referencia": referencia_usuario if referencia_usuario else "Sin referencia",
                                         "total_envio": total_envio_lote,
                                         "total_vales": total_vales_lote,
@@ -515,7 +534,7 @@ else:
                 res_suc = supabase.table("lotes")\
                     .select("*")\
                     .eq("sucursal", user.get("nombre"))\
-                    .order("created_at", desc=True)\
+                    .order("fecha_carga", desc=True)\
                     .execute()
                 
                 if res_suc.data:
