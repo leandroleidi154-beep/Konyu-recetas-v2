@@ -1,7 +1,6 @@
 import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
-import io
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -143,60 +142,35 @@ else:
                 st.error(f"No se pudieron cargar los usuarios: {e}")
         
     elif rol == "sucursal":
-        st.header("🏪 Panel de Sucursal - Carga de Lotes y Recetas")
-        st.write("Subí el reporte diario/periódico en formato CSV para procesar los vales y generar el lote.")
+        st.header("🏪 Panel de Sucursal - Control y Generación de Lotes")
+        st.write("Seleccioná la fecha correspondiente a las recetas y subí el reporte CSV para realizar el control físico y marcar vales.")
+        
+        # 1. Selector de fecha de las recetas
+        fecha_recetas = st.date_input("📅 Fecha correspondiente a las recetas")
         
         archivo_subido = st.file_uploader("Seleccioná el archivo CSV de recetas", type=["csv"])
         
         if archivo_subido is not None:
             try:
-                # Leer el archivo con codificación latin1 para respetar acentos y caracteres especiales
+                # Procesar archivo CSV
                 contenido_bytes = archivo_subido.getvalue()
                 texto_decodificado = contenido_bytes.decode('latin1')
                 lineas = texto_decodificado.splitlines()
                 
-                datos_procesados = []
-                obra_social_actual = "GENERAL"
-                
-                # Parseo inteligente bloque por bloque
-                for i, linea in enumerate(lineas):
-                    partes = [p.strip() for p in linea.split(';')]
-                    
-                    # Detectar si la línea es de Obra Social (ej: ;OSPSA  -SANIDAD-;;;;...)
-                    if len(partes) > 1 and partes[1].startswith(";") or (len(partes[1]) > 0 and "VALID" in partes[1] or "OSPSA" in partes[1] or "PAMI" in partes[1]):
-                        os_candidata = partes[1].strip('; ')
-                        if os_candidata and not os_candidata.startswith("A") and os_candidata != "Mandataria:":
-                            obra_social_actual = os_candidata
-
-                    # Detectar si es una línea de datos de receta (empieza con el nombre del plan o contiene tickets con guion tipo 0990-...)
-                    # Buscamos filas que contengan formato de ticket ej '0990-00043135'
-                    for p in partes:
-                        if "-" in p and len(p) == 13 and p[:4].isdigit():
-                            # Encontramos un ticket, intentamos extraer la fila anterior o estructurada
-                            # Busquemos filas de datos estandarizadas después de la cabecera "Plan;...;Nro Ticket;...;T.T"
-                            pass
-
-                # Parser simplificado y robusto basado en filas de datos reales
                 filas_datos = []
                 os_actual = "OBRA SOCIAL GENERAL"
                 
                 for linea in lineas:
                     cols = linea.split(';')
-                    # Limpiamos celdas vacías
-                    cols_limpias = [c.strip() for c in cols if c.strip() != '']
-                    
-                    if len(cols) > 1 and cols[1].startswith(';') == False and ('-' in cols[1] or 'OSPSA' in cols[1] or 'PAMI' in cols[1] or 'VALID' in cols[1] or 'BAGO' in cols[1] or 'ANDROMACO' in cols[1] or 'ISDIN' in cols[1] or 'CAVIAHUE' in cols[1] or 'GALDERMA' in cols[1] or 'BY DERM' in cols[1]):
+                    if len(cols) > 1 and cols[1].strip() != '':
                         texto_linea = cols[1].strip()
                         if "VALID." in texto_linea or "SANIDAD" in texto_linea or "PAGO" in texto_linea:
                             os_actual = texto_linea.replace(';', '').strip()
 
-                    # Si la fila tiene un número de ticket con formato XXXX-XXXXXXXX
                     for idx_c, val_c in enumerate(cols):
                         if len(val_c) == 13 and val_c[:4].isdigit() and '-' in val_c:
-                            # Posible ticket. El plan suele estar al principio de la fila y el T.T más adelante
                             plan_val = cols[0] if cols[0] != '' else 'PLAN GENERAL'
                             nro_ticket = val_c
-                            # Buscar T.T (suele estar en la siguiente columna con datos)
                             tt_val = ""
                             for siguiente in cols[idx_c+1:]:
                                 if len(siguiente) >= 10 and '-' in siguiente:
@@ -209,29 +183,113 @@ else:
                                 "Obra Social": os_actual,
                                 "Plan": plan_val,
                                 "Nro Ticket": nro_ticket,
-                                "T.T": tt_val
+                                "T.T": tt_val,
+                                "Es Vale": False
                             })
                             break
 
                 if filas_datos:
-                    df_resultado = pd.DataFrame(filas_datos)
-                    # Eliminar duplicados si los hubiera
-                    df_resultado = df_resultado.drop_duplicates(subset=["Nro Ticket"])
+                    df_base = pd.DataFrame(filas_datos).drop_duplicates(subset=["Nro Ticket"])
                     
-                    st.success(f"¡Archivo procesado con éxito! Se detectaron {len(df_resultado)} recetas/vales.")
-                    st.dataframe(df_resultado, use_container_width=True)
-                    
+                    # Guardar en session_state para mantener la selección de vales al interactuar
+                    if "df_lote_activo" not in st.session_state or st.session_state.get("archivo_actual") != archivo_subido.name:
+                        st.session_state["df_lote_activo"] = df_base
+                        st.session_state["archivo_actual"] = archivo_subido.name
+
+                    df_activo = st.session_state["df_lote_activo"]
+
+                    st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de tickets detectados: {len(df_activo)}")
                     st.markdown("---")
-                    nombre_lote = st.text_input("Nombre / Referencia del Lote (ej: Lote Quincenal Octubre)")
+
+                    # 2. Resumen dinámico por Obra Social
+                    st.subheader("📊 Control por Obra Social")
                     
-                    if st.button("💾 Guardar y Generar Lote para Mutuales", type="primary"):
+                    # Calcular totales vs vales seleccionados
+                    resumen_os = []
+                    obras_sociales = df_activo["Obra Social"].unique()
+                    
+                    # Creamos un diccionario para almacenar los controles físicos ingresados
+                    if "fisico_inputs" not in st.session_state:
+                        st.session_state["fisico_inputs"] = {}
+
+                    cols_resumen = st.columns(min(len(obras_sociales), 3) if len(obras_sociales) > 0 else 1)
+                    
+                    for idx, os_nombre in enumerate(obras_sociales):
+                        df_os = df_activo[df_activo["Obra Social"] == os_nombre]
+                        total_sistema = len(df_os)
+                        vales_marcados = len(df_os[df_os["Es Vale"] == True])
+                        total_a_enviar = total_sistema - vales_marcados
+                        
+                        with cols_resumen[idx % len(cols_resumen)]:
+                            st.markdown(f"**{os_nombre}**")
+                            st.write(f"• Detectadas en CSV: `{total_sistema}`")
+                            st.write(f"• Vales retenidos: `{vales_marcados}`")
+                            st.write(f"• **A enviar físico:** **`{total_a_enviar}`**")
+                            
+                            # Control físico ingresado por el operador
+                            key_fisico = f"fisico_{os_nombre}"
+                            if key_fisico not in st.session_state["fisico_inputs"]:
+                                st.session_state["fisico_inputs"][key_fisico] = total_a_enviar
+                                
+                            conteo_fisico = st.number_input(f"Conteo físico real ({os_nombre})", min_value=0, value=st.session_state["fisico_inputs"][key_fisico], key=key_fisico)
+                            
+                            if conteo_fisico != total_a_enviar:
+                                st.warning(f"⚠️ Dif. con físico ({conteo_fisico} vs {total_a_enviar})")
+                            else:
+                                st.success("✅ Conteo OK")
+                            st.markdown("---")
+
+                    # 3. Listado detallado, buscador y marcado de Vales
+                    st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
+                    
+                    busqueda = st.text_input("🔎 Buscar por Nro de Ticket o T.T.", placeholder="Ej: 0990-00043135 o 9909-00558021")
+                    
+                    df_filtrado = df_activo.copy()
+                    if busqueda:
+                        df_filtrado = df_filtrado[
+                            df_filtrado["Nro Ticket"].str.contains(busqueda, case=False, na=False) | 
+                            df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
+                        ]
+
+                    st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
+
+                    # Tabla interactiva con checkboxes para los vales
+                    # Usamos st.data_editor para permitir tildar la columna 'Es Vale' directamente
+                    edited_df = st.data_editor(
+                        df_filtrado[["Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Es Vale": st.column_config.CheckboxColumn(
+                                "Retener como Vale 🎫",
+                                help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
+                                default=False,
+                            )
+                        },
+                        key="editor_vales"
+                    )
+
+                    # Sincronizar los cambios del editor con el DataFrame principal en session_state
+                    for index, row in edited_df.iterrows():
+                        ticket_id = row["Nro Ticket"]
+                        val_vale = row["Es Vale"]
+                        df_activo.loc[df_activo["Nro Ticket"] == ticket_id, "Es Vale"] = val_vale
+
+                    st.markdown("---")
+                    
+                    # 4. Botón de Generar Lote
+                    nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
+                    
+                    if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
                         if nombre_lote:
-                            st.success(f"¡Lote '{nombre_lote}' generado correctamente con {len(df_resultado)} recetas!")
-                            st.info("💡 Próximamente: Este lote quedará disponible para la auditoría de las mutuales.")
+                            total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
+                            total_envio_lote = len(df_activo) - total_vales_lote
+                            st.success(f"¡Lote '{nombre_lote}' generado con éxito para la fecha {fecha_recetas.strftime('%d/%m/%Y')}!")
+                            st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
                         else:
-                            st.warning("Por favor, ingresá un nombre o referencia para el lote.")
+                            st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
                 else:
-                    st.warning("No se pudieron extraer recetas automáticamente con este formato. Revisá que sea el reporte correcto.")
+                    st.warning("No se pudieron extraer recetas automáticamente con este formato.")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo CSV: {e}")
