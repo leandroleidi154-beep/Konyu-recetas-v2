@@ -470,23 +470,35 @@ else:
                             for i, linea in enumerate(lineas):
                                 cols = [c.strip() for c in linea.split(";")]
 
+                                # Detectar encabezado de Obra Social (Ej: A3390, A0406, A3718, A3378, etc.)
                                 if (
                                     len(cols) > 1
                                     and cols[1].startswith("A")
                                     and cols[1][1:].isdigit()
                                 ):
-                                    if i > 0:
-                                        linea_anterior = lineas[i - 1].split(";")
-                                        for col_ant in linea_anterior:
-                                            c_limpia = col_ant.strip("; ")
-                                            if (
-                                                c_limpia
-                                                and not c_limpia.startswith("A")
-                                                and "Mandataria" not in c_limpia
-                                            ):
-                                                obra_social_actual = c_limpia
+                                    # Buscar hacia arriba el nombre real de la Obra Social
+                                    for offset in range(1, 6):
+                                        if i - offset >= 0:
+                                            linea_prev = lineas[i - offset].split(";")
+                                            posibles_titulos = [
+                                                c.strip("; ")
+                                                for c in linea_prev
+                                                if c.strip("; ")
+                                            ]
+
+                                            # Filtrar palabras clave del sistema y códigos 'A'
+                                            cand = [
+                                                t
+                                                for t in posibles_titulos
+                                                if not t.startswith("A")
+                                                and "Mandataria" not in t
+                                                and t.upper() != "PLAN"
+                                            ]
+                                            if cand:
+                                                obra_social_actual = cand[0]
                                                 break
 
+                                # Extraer datos de la receta
                                 for idx_c, val_c in enumerate(cols):
                                     if (
                                         len(val_c) == 13
@@ -494,7 +506,10 @@ else:
                                         and "-" in val_c
                                     ):
                                         plan_val = (
-                                            cols[0] if cols[0] != "" else "PLAN GENERAL"
+                                            cols[0]
+                                            if cols[0] != ""
+                                            and cols[0].upper() != "PLAN"
+                                            else "PLAN GENERAL"
                                         )
                                         nro_ticket = val_c
                                         tt_val = ""
