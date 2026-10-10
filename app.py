@@ -726,23 +726,36 @@ else:
 
                         if st.button(btn_label, type="primary"):
                             try:
+                                # Recorremos y calculamos tomando el valor físico real ingresado por el usuario
                                 total_vales_lote = len(
                                     df_activo[df_activo["Es Vale"] == True]
                                 )
-                                total_envio_lote = len(df_activo) - total_vales_lote
 
                                 filas_os_pdf = []
+                                total_envio_lote = 0
+
                                 for os_n in df_activo["Obra Social"].unique():
                                     df_sub = df_activo[df_activo["Obra Social"] == os_n]
+                                    total_csv_os = len(df_sub)
                                     v_m = len(df_sub[df_sub["Es Vale"] == True])
+
+                                    # Leemos el valor físico especificado en el input de Streamlit
+                                    key_fisico = f"fisico_{os_n}"
+                                    fisico_ingresado = st.session_state.get(
+                                        key_fisico, total_csv_os - v_m
+                                    )
+
+                                    total_envio_lote += fisico_ingresado
+
                                     filas_os_pdf.append(
                                         {
                                             "Obra Social": os_n,
-                                            "Total": len(df_sub),
-                                            "Vales": v_m,
-                                            "A Enviar": len(df_sub) - v_m,
+                                            "Total CSV": total_csv_os,
+                                            "Vales Retenidos": v_m,
+                                            "Físico Enviado": fisico_ingresado,
                                         }
                                     )
+
                                 df_resumen_os_pdf = pd.DataFrame(filas_os_pdf)
                                 df_vales_pdf = df_activo[df_activo["Es Vale"] == True][
                                     ["Obra Social", "Plan", "Nro Ticket", "T.T"]
