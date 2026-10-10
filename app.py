@@ -155,26 +155,83 @@ else:
             st.subheader("📄 Resumen y Comprobante para Mutuales")
             st.info(f"Resumen: {lote_info['total_envio']} recetas enviadas a mutuales | {lote_info['total_vales']} recetas retenidas como vales.")
             
-            # Generación del PDF con FPDF
-            pdf = FPDF()
+            # --- GENERACIÓN DEL PDF REDISEÑADO CON TABLAS ENCUADRADAS ---
+            class PDF(FPDF):
+                def header(self):
+                    self.set_font("Arial", "B", 16)
+                    self.cell(0, 10, "Resumen de Cierre de Lote", 0, 1, "C")
+                    self.set_font("Arial", "B", 11)
+                    sucursal_nombre = user.get("nombre", "Sucursal")
+                    self.cell(0, 6, f"Sucursal: {sucursal_nombre}  |  Fecha de Recetas: {lote_info['fecha']}", 0, 1, "C")
+                    self.set_font("Arial", "I", 10)
+                    self.cell(0, 6, f"Referencia Lote: {lote_info['nombre']}", 0, 1, "C")
+                    self.ln(5)
+                    self.line(10, self.get_y(), 200, self.get_y())
+                    self.ln(5)
+
+                def footer(self):
+                    self.set_y(-15)
+                    self.set_font("Arial", "I", 8)
+                    self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "C")
+
+            pdf = PDF()
             pdf.add_page()
-            pdf.set_font("Arial", "B", 16)
-            pdf.cell(0, 10, "KONYU - Resumen de Cierre de Lote", 0, 1, "C")
-            pdf.set_font("Arial", "", 11)
-            pdf.cell(0, 8, f"Referencia: {lote_info['nombre']}", 0, 1, "L")
-            pdf.cell(0, 8, f"Fecha de Recetas: {lote_info['fecha']}", 0, 1, "L")
-            pdf.cell(0, 8, f"Sucursal: {user.get('nombre', 'Sucursal')}", 0, 1, "L")
-            pdf.ln(5)
             
+            # 1. Cuadro de Resumen por Obra Social
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 8, "Totales del Cierre:", 0, 1, "L")
-            pdf.set_font("Arial", "", 11)
-            pdf.cell(0, 8, f"- Recetas enviadas a mutuales: {lote_info['total_envio']}", 0, 1, "L")
-            pdf.cell(0, 8, f"- Vales retenidos en sucursal: {lote_info['total_vales']}", 0, 1, "L")
-            pdf.ln(10)
+            pdf.cell(0, 8, "1. Resumen por Obra Social (Recetas Enviadas)", 0, 1, "L")
+            pdf.ln(2)
             
-            pdf.set_font("Arial", "I", 9)
-            pdf.cell(0, 8, "Documento generado automáticamente por Sistema Konyu Recetas.", 0, 1, "C")
+            # Encabezado de la tabla de obras sociales
+            pdf.set_font("Arial", "B", 9)
+            pdf.set_fill_color(230, 230, 230)
+            pdf.cell(90, 7, "Obra Social", 1, 0, "L", True)
+            pdf.cell(30, 7, "Total CSV", 1, 0, "C", True)
+            pdf.cell(30, 7, "Vales Retenidos", 1, 0, "C", True)
+            pdf.cell(40, 7, "A Enviar (Fisico)", 1, 1, "C", True)
+            
+            pdf.set_font("Arial", "", 9)
+            df_os_resumen = lote_info["resumen_os"]
+            for _, row_os in df_os_resumen.iterrows():
+                os_txt = str(row_os["Obra Social"])[:45]
+                pdf.cell(90, 6, os_txt, 1, 0, "L")
+                pdf.cell(30, 6, str(row_os["Total"]), 1, 0, "C")
+                pdf.cell(30, 6, str(row_os["Vales"]), 1, 0, "C")
+                pdf.cell(40, 6, str(row_os["A Enviar"]), 1, 1, "C")
+                
+            pdf.ln(8)
+            
+            # 2. Cuadro de Vales Retenidos
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, "2. Detalle de Vales Retenidos (Pendientes en Sucursal)", 0, 1, "L")
+            pdf.ln(2)
+            
+            df_vales_det = lote_info["df_vales"]
+            if not df_vales_det.empty:
+                pdf.set_font("Arial", "B", 8)
+                pdf.set_fill_color(240, 240, 240)
+                pdf.cell(60, 7, "Obra Social", 1, 0, "L", True)
+                pdf.cell(45, 7, "Plan", 1, 0, "L", True)
+                pdf.cell(42, 7, "Nro Ticket", 1, 0, "C", True)
+                pdf.cell(43, 7, "T.T.", 1, 1, "C", True)
+                
+                pdf.set_font("Arial", "", 8)
+                for _, row_v in df_vales_det.iterrows():
+                    pdf.cell(60, 6, str(row_v["Obra Social"])[:30], 1, 0, "L")
+                    pdf.cell(45, 6, str(row_v["Plan"])[:22], 1, 0, "L")
+                    pdf.cell(42, 6, str(row_v["Nro Ticket"]), 1, 0, "C")
+                    pdf.cell(43, 6, str(row_v["T.T"]), 1, 1, "C")
+            else:
+                pdf.set_font("Arial", "I", 9)
+                pdf.cell(0, 7, "No se registraron vales retenidos en este lote.", 1, 1, "C")
+                
+            pdf.ln(8)
+            
+            # 3. Totales finales encuadrados
+            pdf.set_font("Arial", "B", 10)
+            pdf.set_fill_color(245, 245, 245)
+            total_gral = lote_info['total_envio'] + lote_info['total_vales']
+            pdf.cell(190, 8, f" TOTALES GENERALES:   Procesadas: {total_gral}  |  Enviadas: {lote_info['total_envio']}  |  Vales Retenidos: {lote_info['total_vales']}", 1, 1, "C", True)
             
             pdf_bytes = pdf.output(dest='S').encode('latin1')
             
@@ -350,61 +407,3 @@ else:
                         df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
                         use_container_width=True,
                         hide_index=True,
-                        column_config={
-                            "ID_Fila": None,
-                            "Es Vale": st.column_config.CheckboxColumn(
-                                "Retener como Vale 🎫",
-                                help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
-                                default=False,
-                            )
-                        },
-                        key="editor_vales",
-                        on_change=actualizar_vales
-                    )
-
-                    st.markdown("---")
-                    
-                    # 4. Botón de Generar Lote y Guardar en Supabase
-                    nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
-                    
-                    if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
-                        if nombre_lote:
-                            try:
-                                total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
-                                total_envio_lote = len(df_activo) - total_vales_lote
-                                
-                                data_lote = {
-                                    "id_lote": nombre_lote,
-                                    "sucursal": user.get("nombre", "Sucursal"),
-                                    "fecha_carga": fecha_recetas.strftime("%Y-%m-%d"),
-                                    "estado": "Cerrado",
-                                    "observacion": f"Enviadas: {total_envio_lote} | Vales retenidos: {total_vales_lote}"
-                                }
-                                
-                                res_insert = supabase.table("lotes").insert(data_lote).execute()
-                                
-                                if res_insert:
-                                    st.session_state["lote_generado_exito"] = {
-                                        "nombre": nombre_lote,
-                                        "fecha": fecha_recetas.strftime('%d/%m/%Y'),
-                                        "total_envio": total_envio_lote,
-                                        "total_vales": total_vales_lote
-                                    }
-                                    st.rerun()
-                                else:
-                                    st.error("No se pudo confirmar el guardado en la base de datos.")
-                                    
-                            except Exception as e:
-                                st.error(f"Error al guardar el lote en Supabase: {e}")
-                        else:
-                            st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
-                        
-                except Exception as e:
-                    st.error(f"Error al procesar el archivo CSV: {e}")
-        
-    elif rol == "mutual":
-        st.header("🏥 Panel de Mutual / Obra Social")
-        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
-        
-    else:
-        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
