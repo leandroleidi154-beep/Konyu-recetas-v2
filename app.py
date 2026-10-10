@@ -217,7 +217,7 @@ else:
                                         nuevo_estado = datos_edit["Es Vale"]
                                         st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Es Vale"] = nuevo_estado
                                         
-                                        # Sincronizar automáticamente el físico con el nuevo "A enviar" para que no quede obsoleto
+                                        # Actualizar automáticamente el físico para que coincida con el nuevo "A enviar"
                                         os_afectada = st.session_state["df_lote_activo"].loc[st.session_state["df_lote_activo"]["ID_Fila"] == id_real, "Obra Social"].values[0]
                                         df_os_temp = st.session_state["df_lote_activo"][st.session_state["df_lote_activo"]["Obra Social"] == os_afectada]
                                         nuevo_a_enviar = len(df_os_temp) - len(df_os_temp[df_os_temp["Es Vale"] == True])
@@ -240,6 +240,10 @@ else:
                         key_fisico = f"fisico_{os_nombre}"
                         if key_fisico not in st.session_state["fisico_inputs"]:
                             st.session_state["fisico_inputs"][key_fisico] = a_enviar
+                        else:
+                            # Sincronizamos el input físico si el usuario marcó un vale y estaba igual al total anterior
+                            if st.session_state["fisico_inputs"][key_fisico] > a_enviar and st.session_state["fisico_inputs"][key_fisico] == (a_enviar + 1):
+                                st.session_state["fisico_inputs"][key_fisico] = a_enviar
                         
                         # Renglón horizontal unificado
                         with st.container():
@@ -256,7 +260,7 @@ else:
                                 "Físico", 
                                 min_value=0, 
                                 max_value=total_csv,
-                                value=min(st.session_state["fisico_inputs"][key_fisico], a_enviar), 
+                                value=st.session_state["fisico_inputs"][key_fisico], 
                                 key=key_fisico,
                                 label_visibility="collapsed"
                             )
