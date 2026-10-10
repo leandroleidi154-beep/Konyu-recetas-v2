@@ -206,7 +206,7 @@ else:
                     st.success(f"¡Reporte cargado correctamente para el día {fecha_recetas.strftime('%d/%m/%Y')}! Total de recetas detectadas: {len(df_activo)}")
                     st.markdown("---")
 
-                    # 2. Resumen compacto en una sola línea por Obra Social
+                    # 2. Resumen compacto horizontal con números destacados
                     st.subheader("📊 Control por Obra Social")
                     
                     obras_sociales = df_activo["Obra Social"].unique()
@@ -224,14 +224,14 @@ else:
                         if key_fisico not in st.session_state["fisico_inputs"]:
                             st.session_state["fisico_inputs"][key_fisico] = a_enviar
                         
-                        # Renglón horizontal unificado
+                        # Renglón horizontal unificado con números más notorios
                         with st.container():
                             c_os, c_tot, c_val, c_env, c_fis, c_est = st.columns([2.5, 1, 1, 1, 1.5, 0.8])
                             
                             c_os.markdown(f"**{os_nombre}**")
-                            c_tot.markdown(f"Total: `{total_csv}`")
-                            c_val.markdown(f"Vales: `{vales_marcados}`")
-                            c_env.markdown(f"A enviar: `{a_enviar}`")
+                            c_tot.markdown(f"Total: **{total_csv}**")
+                            c_val.markdown(f"Vales: **{vales_marcados}**")
+                            c_env.markdown(f"A enviar: **{a_enviar}**")
                             
                             conteo_fisico = c_fis.number_input(
                                 "Físico", 
@@ -282,31 +282,4 @@ else:
 
                     for index, row in edited_df.iterrows():
                         fila_id = row["ID_Fila"]
-                        val_vale = row["Es Vale"]
-                        df_activo.loc[df_activo["ID_Fila"] == fila_id, "Es Vale"] = val_vale
-
-                    st.markdown("---")
-                    
-                    # 4. Botón de Generar Lote
-                    nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
-                    
-                    if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
-                        if nombre_lote:
-                            total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
-                            total_envio_lote = len(df_activo) - total_vales_lote
-                            st.success(f"¡Lote '{nombre_lote}' generado con éxito para la fecha {fecha_recetas.strftime('%d/%m/%Y')}!")
-                            st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
-                        else:
-                            st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
-                else:
-                    st.warning("No se pudieron extraer recetas automáticamente con este formato.")
-                    
-            except Exception as e:
-                st.error(f"Error al procesar el archivo CSV: {e}")
-        
-    elif rol == "mutual":
-        st.header("🏥 Panel de Mutual / Obra Social")
-        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
-        
-    else:
-        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
+                        val_vale =
