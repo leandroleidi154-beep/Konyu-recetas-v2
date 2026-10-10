@@ -221,4 +221,92 @@ else:
                         a_enviar = total_csv - vales_marcados
                         
                         key_fisico = f"fisico_{os_nombre}"
-                        if key_fisico not in st.
+                        if key_fisico not in st.session_state["fisico_inputs"]:
+                            st.session_state["fisico_inputs"][key_fisico] = a_enviar
+                        
+                        # Renglón horizontal unificado
+                        with st.container():
+                            c_os, c_tot, c_val, c_env, c_fis, c_est = st.columns([2.5, 1, 1, 1, 1.5, 0.8])
+                            
+                            c_os.markdown(f"**{os_nombre}**")
+                            c_tot.markdown(f"Total: `{total_csv}`")
+                            c_val.markdown(f"Vales: `{vales_marcados}`")
+                            c_env.markdown(f"A enviar: `{a_enviar}`")
+                            
+                            conteo_fisico = c_fis.number_input(
+                                "Físico", 
+                                min_value=0, 
+                                max_value=total_csv,
+                                value=min(st.session_state["fisico_inputs"][key_fisico], a_enviar), 
+                                key=key_fisico,
+                                label_visibility="collapsed"
+                            )
+                            st.session_state["fisico_inputs"][key_fisico] = conteo_fisico
+                            
+                            if conteo_fisico != a_enviar:
+                                c_est.warning("⚠️")
+                            else:
+                                c_est.success("✅")
+                            
+                            st.markdown("---")
+
+                    # 3. Listado detallado, buscador y marcado de Vales
+                    st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
+                    
+                    busqueda = st.text_input("🔎 Buscar por Nro de Ticket o T.T.", placeholder="Ej: 0990-00043135 o 9909-00558021")
+                    
+                    df_filtrado = df_activo.copy()
+                    if busqueda:
+                        df_filtrado = df_filtrado[
+                            df_filtrado["Nro Ticket"].str.contains(busqueda, case=False, na=False) | 
+                            df_filtrado["T.T"].str.contains(busqueda, case=False, na=False)
+                        ]
+
+                    st.info(f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros.")
+
+                    # Tabla interactiva con checkboxes para los vales
+                    edited_df = st.data_editor(
+                        df_filtrado[["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T", "Es Vale"]],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "ID_Fila": None,
+                            "Es Vale": st.column_config.CheckboxColumn(
+                                "Retener como Vale 🎫",
+                                help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
+                                default=False,
+                            )
+                        },
+                        key="editor_vales"
+                    )
+
+                    for index, row in edited_df.iterrows():
+                        fila_id = row["ID_Fila"]
+                        val_vale = row["Es Vale"]
+                        df_activo.loc[df_activo["ID_Fila"] == fila_id, "Es Vale"] = val_vale
+
+                    st.markdown("---")
+                    
+                    # 4. Botón de Generar Lote
+                    nombre_lote = st.text_input("🏷️ Nombre / Referencia para cerrar el Lote (ej: Lote Sucursal 09 - 08/10/2026)")
+                    
+                    if st.button("🔒 Cerrar y Generar Lote para Mutuales", type="primary"):
+                        if nombre_lote:
+                            total_vales_lote = len(df_activo[df_activo["Es Vale"] == True])
+                            total_envio_lote = len(df_activo) - total_vales_lote
+                            st.success(f"¡Lote '{nombre_lote}' generado con éxito para la fecha {fecha_recetas.strftime('%d/%m/%Y')}!")
+                            st.info(f"Resumen: {total_envio_lote} recetas enviadas a mutuales | {total_vales_lote} recetas retenidas como vales.")
+                        else:
+                            st.warning("Por favor, ingresá un nombre o referencia para identificar el lote.")
+                else:
+                    st.warning("No se pudieron extraer recetas automáticamente con este formato.")
+                    
+            except Exception as e:
+                st.error(f"Error al procesar el archivo CSV: {e}")
+        
+    elif rol == "mutual":
+        st.header("🏥 Panel de Mutual / Obra Social")
+        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
+        
+    else:
+        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
