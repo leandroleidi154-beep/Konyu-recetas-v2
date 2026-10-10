@@ -486,12 +486,15 @@ else:
                                                 if c.strip("; ")
                                             ]
 
-                                            # Filtrar palabras clave del sistema y códigos 'A'
+                                            # Filtrar palabras clave del sistema, códigos 'A' y montos monetarios ($Tk)
                                             cand = [
                                                 t
                                                 for t in posibles_titulos
                                                 if not t.startswith("A")
                                                 and "Mandataria" not in t
+                                                and "$" not in t
+                                                and "Tk" not in t
+                                                and "Os" not in t
                                                 and t.upper() != "PLAN"
                                             ]
                                             if cand:
