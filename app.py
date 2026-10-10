@@ -18,39 +18,68 @@ def init_connection() -> Client:
 
 supabase = init_connection()
 
-# 3. Pantalla de inicio de sesión / Selección de Rol temporal
-st.title("💊 Konyu Recetas")
-st.sidebar.title("Navegación")
+# 3. Inicialización del estado de sesión
+if "usuario_logueado" not in st.session_state:
+    st.session_state["usuario_logueado"] = None
 
-# Menú lateral para simular o verificar roles por ahora
-rol_seleccionado = st.sidebar.selectbox(
-    "Seleccionar Rol (Temporal)",
-    ["Seleccionar...", "Administrador", "Sucursal", "Mutual"]
-)
-
-if rol_seleccionado == "Seleccionar...":
-    st.info("Por favor, selecciona un rol en el menú lateral para ingresar al sistema.")
+# --- PANTALLA DE LOGIN ---
+if st.session_state["usuario_logueado"] is None:
+    st.title("💊 Konyu Recetas - Iniciar Sesión")
     
-elif rol_seleccionado == "Administrador":
-    st.header("Panel de Administrador")
-    st.write("Acá vas a poder gestionar usuarios, lotes y ver reportes generales.")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.subheader("Acceso al Sistema")
+        usuario_input = st.text_input("Usuario o Email")
+        password_input = st.text_input("Contraseña", type="password")
+        
+        if st.button("Ingresar", type="primary", use_container_width=True):
+            if usuario_input and password_input:
+                try:
+                    # Consulta a la tabla usuarios
+                    res = supabase.table("usuarios")\
+                        .select("*")\
+                        .eq("usuario", usuario_input)\
+                        .eq("password", password_input)\
+                        .execute()
+                    
+                    if res.data and len(res.data) > 0:
+                        st.session_state["usuario_logueado"] = res.data[0]
+                        st.success("¡Inicio de sesión exitoso!")
+                        st.rerun()
+                    else:
+                        st.error("Usuario o contraseña incorrectos.")
+                except Exception as e:
+                    st.error(f"Error de conexión con la base de datos: {e}")
+            else:
+                st.warning("Por favor, completá ambos campos.")
+
+# --- PANEL PRINCIPAL (USUARIO LOGUEADO) ---
+else:
+    user = st.session_state["usuario_logueado"]
+    st.sidebar.title("💊 Konyu Recetas")
+    st.sidebar.write(f"**Usuario:** {user.get('usuario', 'Desconocido')}")
+    st.sidebar.write(f"**Rol:** {user.get('rol', 'Sin Rol')}")
     
-    # Ejemplo rápido de consulta a Supabase para verificar conexión
-    try:
-        response = supabase.table("usuarios").select("*").execute()
-        usuarios = response.data
-        st.subheader("Usuarios registrados en la base:")
-        if usuarios:
-            st.dataframe(pd.DataFrame(usuarios))
-        else:
-            st.warning("No hay usuarios cargados todavía en la tabla 'usuarios'.")
-    except Exception as e:
-        st.error(f"Error al conectar con la base de datos: {e}")
+    if st.sidebar.button("Cerrar Sesión", use_container_width=True):
+        st.session_state["usuario_logueado"] = None
+        st.rerun()
+        
+    st.sidebar.markdown("---")
 
-elif rol_seleccionado == "Sucursal":
-    st.header("Panel de Sucursal")
-    st.write("Acá las sucursales van a poder cargar lotes y gestionar sus vales.")
+    rol = str(user.get("rol", "")).lower()
 
-elif rol_seleccionado == "Mutual":
-    st.header("Panel de Mutual / Obra Social")
-    st.write("Acá las mutuales van a poder auditar y procesar los vales.")
+    # Vistas según el rol asignado
+    if rol == "administrador":
+        st.header("👑 Panel de Administrador")
+        st.write("Bienvenido al módulo de administración central.")
+        
+    elif rol == "sucursal":
+        st.header("🏪 Panel de Sucursal")
+        st.write("Bienvenido al módulo de gestión de lotes y vales.")
+        
+    elif rol == "mutual":
+        st.header("🏥 Panel de Mutual / Obra Social")
+        st.write("Bienvenido al módulo de auditoría de recetas.")
+        
+    else:
+        st.warning("El usuario actual no tiene un rol válido asignado en la base de datos.")
