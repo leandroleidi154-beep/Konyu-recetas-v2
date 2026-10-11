@@ -916,28 +916,38 @@ else:
                 st.error(f"Error al recuperar el historial: {e}")
 
         # 📋 Pestaña de Registro y Gestión de Vales (Rediseñada y Multiselección)
+        # 📋 Pestaña de Registro y Gestión de Vales (Con selección acumulativa persistente)
         with tab_vales:
             st.subheader("📋 Registro y Seguimiento de Vales Retenidos")
+
+            # Inicializar la lista de seleccionados en session_state si no existe
+            if "vales_seleccionados_ids" not in st.session_state:
+                st.session_state["vales_seleccionados_ids"] = []
 
             # 1. Filtros de Búsqueda
             col_f1, col_f2, col_f3, col_f4 = st.columns([1.5, 1.5, 2, 1])
 
             with col_f1:
                 filtro_estado = st.selectbox(
-                    "Estado", ["Pendiente", "Todos", "Enviado", "Cancelado"]
+                    "Estado",
+                    ["Pendiente", "Todos", "Enviado", "Cancelado"],
+                    key="vales_filtro_estado",
                 )
-
             with col_f2:
-                usar_todas_fechas = st.checkbox("Ver todas las fechas", value=True)
-
+                usar_todas_fechas = st.checkbox(
+                    "Ver todas las fechas", value=True, key="vales_chk_fechas"
+                )
             with col_f3:
                 fecha_filtro_vales = st.date_input(
-                    "Fecha de Origen", disabled=usar_todas_fechas
+                    "Fecha de Origen",
+                    disabled=usar_todas_fechas,
+                    key="vales_fecha_origen",
                 )
-
             with col_f4:
                 busqueda_vales = st.text_input(
-                    "🔍 Ticket o T.T.", placeholder="Ej: 12345"
+                    "🔍 Ticket o T.T.",
+                    placeholder="Ej: 12345",
+                    key="vales_busqueda_txt",
                 )
 
             try:
@@ -970,12 +980,16 @@ else:
                         ]
 
                     if not df_v_db.empty:
-                        # Columna auxiliar para selección múltiple
-                        df_v_db["Seleccionar"] = False
+                        st.info(
+                            f"Mostrando {len(df_v_db)} vales en pantalla. Tildá para sumar a la lista de envío."
+                        )
 
-                        st.info(f"Mostrando {len(df_v_db)} vales retenidos.")
+                        # Marcar cuáles ya estaban seleccionados previamente en la memoria
+                        df_v_db["Seleccionar"] = df_v_db["id_vale"].isin(
+                            st.session_state["vales_seleccionados_ids"]
+                        )
 
-                        # 3. Tabla editable compacta con Checkbox
+                        # Tabla interactiva
                         df_editado_vales = st.data_editor(
                             df_v_db[
                                 [
@@ -986,16 +1000,14 @@ else:
                                     "n_ticket",
                                     "tt_tramitacion",
                                     "estado",
-                                    "id_vale",  # Mantenemos oculto internamente
+                                    "id_vale",
                                 ]
                             ],
                             use_container_width=True,
                             hide_index=True,
                             column_config={
                                 "Seleccionar": st.column_config.CheckboxColumn(
-                                    "☑️",
-                                    help="Seleccioná los vales para procesar en lote.",
-                                    default=False,
+                                    "☑️", default=False
                                 ),
                                 "fecha_origen": "Fecha",
                                 "obra_social": "Obra Social",
@@ -1003,83 +1015,136 @@ else:
                                 "n_ticket": "Nº Ticket",
                                 "tt_tramitacion": "T.T.",
                                 "estado": "Estado",
-                                "id_vale": None,  # Se oculta la columna
+                                "id_vale": None,
                             },
-                            key="editor_multiseleccion_vales",
+                            key="editor_acumulativo_vales",
                         )
 
-                        # Filas seleccionadas por el usuario
-                        vales_seleccionados = df_editado_vales[
-                            df_editado_vales["Seleccionar"] == True
-                        ]
+                        # Sincronizar los cambios del editor con el session_state acumulativo
+                        for _, row in df_editado_vales.iterrows():
+                            vid = row["id_vale"]
+                            seleccionado = row["Seleccionar"]
+                            if (
+                                seleccionado
+                                and vid
+                                not in st.session_state["vales_seleccionados_ids"]
+                            ):
+                                st.session_state["vales_seleccionados_ids"].append(vid)
+                            elif (
+                                not seleccionado
+                                and vid in st.session_state["vales_seleccionados_ids"]
+                            ):
+                                st.session_state["vales_seleccionados_ids"].remove(vid)
 
                         st.markdown("---")
-                        st.subheader("⚙️ Acciones en Lote para Seleccionados")
+                        st.subheader("🛒 Vales Acumulados para Procesar")
 
-                        if not vales_seleccionados.empty:
-                            cant_sel = len(vales_seleccionados)
-                            ids_a_procesar = vales_seleccionados["id_vale"].tolist()
+                        ids_acumulados = st.session_state["vales_seleccionados_ids"]
 
-                            st.write(f"Has seleccionado **{cant_sel}** vale(s).")
+                        if ids_acumulados:
+                            # Consultar los detalles completos de los vales seleccionados acumulados
+                            res_acum = (
+                                supabase.table("vales")
+                                .select("*")
+                                .in_("id_vale", ids_acumulados)
+                                .execute()
+                            )
+                            if res_acum.data:
+                                df_acumulado = pd.DataFrame(res_acum.data)
 
-                            col_act1, col_act2, col_act3 = st.columns([2, 1.5, 1.5])
-
-                            with col_act1:
-                                fecha_envio_masivo = st.date_input(
-                                    "Fecha de Envío Real para los elegidos"
+                                # Mostramos la lista limpia de lo que se va acumulando abajo
+                                st.dataframe(
+                                    df_acumulado[
+                                        [
+                                            "fecha_origen",
+                                            "obra_social",
+                                            "plan",
+                                            "n_ticket",
+                                            "tt_tramitacion",
+                                            "estado",
+                                        ]
+                                    ],
+                                    use_container_width=True,
+                                    hide_index=True,
                                 )
-                                if st.button(
-                                    f"🚀 Marcar ({cant_sel}) como ENVIADOS",
-                                    type="primary",
-                                ):
-                                    for id_v in ids_a_procesar:
-                                        supabase.table("vales").update(
-                                            {
-                                                "estado": "Enviado",
-                                                "fecha_resolucion": str(
-                                                    fecha_envio_masivo
-                                                ),
-                                            }
-                                        ).eq("id_vale", id_v).execute()
-                                    st.success(
-                                        f"¡{cant_sel} vale(s) actualizados a Enviado!"
-                                    )
-                                    st.rerun()
 
-                            with col_act2:
-                                st.write("")
-                                st.write("")
-                                if st.button(f"❌ Cancelar ({cant_sel})"):
-                                    for id_v in ids_a_procesar:
-                                        supabase.table("vales").update(
-                                            {"estado": "Cancelado"}
-                                        ).eq("id_vale", id_v).execute()
-                                    st.warning(
-                                        f"{cant_sel} vale(s) marcados como cancelados."
-                                    )
-                                    st.rerun()
+                                cant_total_sel = len(ids_acumulados)
+                                st.write(
+                                    f"Total seleccionados para acción masiva: **{cant_total_sel}** vales."
+                                )
 
-                            with col_act3:
-                                st.write("")
-                                st.write("")
-                                if st.button(f"🗑️ Eliminar ({cant_sel})"):
-                                    for id_v in ids_a_procesar:
-                                        supabase.table("vales").delete().eq(
-                                            "id_vale", id_v
-                                        ).execute()
-                                    st.error(f"{cant_sel} vale(s) eliminados.")
-                                    st.rerun()
+                                col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(
+                                    [2, 1.5, 1.5, 1]
+                                )
+
+                                with col_acc1:
+                                    fecha_envio_masivo = st.date_input(
+                                        "Fecha de Envío Real"
+                                    )
+                                    if st.button(
+                                        f"🚀 Enviar ({cant_total_sel}) elegidos",
+                                        type="primary",
+                                    ):
+                                        for id_v in ids_acumulados:
+                                            supabase.table("vales").update(
+                                                {
+                                                    "estado": "Enviado",
+                                                    "fecha_resolucion": str(
+                                                        fecha_envio_masivo
+                                                    ),
+                                                }
+                                            ).eq("id_vale", id_v).execute()
+                                        st.session_state["vales_seleccionados_ids"] = (
+                                            []
+                                        )  # Limpiar lista
+                                        st.success(
+                                            f"¡{cant_total_sel} vale(s) marcados como Enviados!"
+                                        )
+                                        st.rerun()
+
+                                with col_acc2:
+                                    st.write("")
+                                    st.write("")
+                                    if st.button(f"❌ Cancelar ({cant_total_sel})"):
+                                        for id_v in ids_acumulados:
+                                            supabase.table("vales").update(
+                                                {"estado": "Cancelado"}
+                                            ).eq("id_vale", id_v).execute()
+                                        st.session_state["vales_seleccionados_ids"] = []
+                                        st.warning(
+                                            f"{cant_total_sel} vale(s) cancelados."
+                                        )
+                                        st.rerun()
+
+                                with col_acc3:
+                                    st.write("")
+                                    st.write("")
+                                    if st.button(f"🗑️ Eliminar ({cant_total_sel})"):
+                                        for id_v in ids_acumulados:
+                                            supabase.table("vales").delete().eq(
+                                                "id_vale", id_v
+                                            ).execute()
+                                        st.session_state["vales_seleccionados_ids"] = []
+                                        st.error(
+                                            f"{cant_total_sel} vale(s) eliminados."
+                                        )
+                                        st.rerun()
+
+                                with col_acc4:
+                                    st.write("")
+                                    st.write("")
+                                    if st.button("🧹 Limpiar lista"):
+                                        st.session_state["vales_seleccionados_ids"] = []
+                                        st.rerun()
                         else:
                             st.caption(
-                                "👈 Tildá uno o más vales en la tabla de arriba para habilitar las acciones masivas."
+                                "Aún no hay vales seleccionados. Tildá los elementos arriba para agregarlos a la lista acumulativa."
                             )
 
                     else:
                         st.info("No hay vales que coincidan con la búsqueda.")
                 else:
-                    st.info(
-                        "No hay vales registrados para esta sucursal con los filtros elegidos."
-                    )
+                    st.info("No hay vales registrados con los filtros elegidos.")
 
             except Exception as e:
                 st.error(f"Error al cargar los vales desde la base de datos: {e}")
