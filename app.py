@@ -138,9 +138,7 @@ def generar_pdf_bytes(
 
     # Cuadro de Totales Generales Resaltado y Ajustado
     pdf.set_fill_color(240, 240, 240)
-    pdf.set_font(
-        "Arial", "B", 9
-    )  # Fuente optimizada para que entre perfecto en el ancho de 190
+    pdf.set_font("Arial", "B", 9)
 
     envio_final = total_envio if total_envio > 0 else total_fisico_acum
     vales_final = total_vales if total_vales > 0 else total_vales_acum
@@ -357,8 +355,9 @@ else:
     elif rol == "sucursal":
         st.header("🏪 Panel de Sucursal - Control y Generación de Lotes")
 
-        tab_cierre, tab_historial = st.tabs(
-            ["🔒 Cierre de Lote", "📜 Historial de Lotes"]
+        # 🔹 Se agregan tres pestañas: Cierre, Historial y Registro de Vales
+        tab_cierre, tab_historial, tab_vales = st.tabs(
+            ["🔒 Cierre de Lote", "📜 Historial de Lotes", "📋 Registro de Vales"]
         )
 
         with tab_cierre:
@@ -501,13 +500,11 @@ else:
                             for i, linea in enumerate(lineas):
                                 cols = [c.strip() for c in linea.split(";")]
 
-                                # Detectar encabezado de Obra Social (Ej: A3390, A0406, A3718, A3378, etc.)
                                 if (
                                     len(cols) > 1
                                     and cols[1].startswith("A")
                                     and cols[1][1:].isdigit()
                                 ):
-                                    # Miramos exclusivamente la línea anterior (offset 1) donde está el nombre real
                                     if i - 1 >= 0:
                                         linea_prev = lineas[i - 1].split(";")
                                         posibles_titulos = [
@@ -524,7 +521,7 @@ else:
                                                 t.startswith("A")
                                                 and len(t) < 6
                                                 and t[1:].isdigit()
-                                            )  # Solo descarta códigos cortos tipo A3390
+                                            )
                                             and not t.isdigit()
                                             and "Mandataria" not in t
                                             and "$" not in t
@@ -536,7 +533,6 @@ else:
                                         if cand:
                                             obra_social_actual = cand[0]
 
-                                # Extraer datos de la receta
                                 for idx_c, val_c in enumerate(cols):
                                     if (
                                         len(val_c) == 13
@@ -757,7 +753,6 @@ else:
 
                         if st.button(btn_label, type="primary"):
                             try:
-                                # Recorremos y calculamos tomando el valor físico real ingresado por el usuario
                                 total_vales_lote = len(
                                     df_activo[df_activo["Es Vale"] == True]
                                 )
@@ -770,7 +765,6 @@ else:
                                     total_csv_os = len(df_sub)
                                     v_m = len(df_sub[df_sub["Es Vale"] == True])
 
-                                    # Leemos el valor físico especificado en el input de Streamlit
                                     key_fisico = f"fisico_{os_n}"
                                     fisico_ingresado = st.session_state.get(
                                         key_fisico, total_csv_os - v_m
@@ -809,7 +803,6 @@ else:
                                 )
 
                                 if res_insert:
-                                    # Guardar los vales asociados en la tabla 'vales'
                                     df_vales_a_guardar = df_activo[
                                         df_activo["Es Vale"] == True
                                     ]
@@ -871,6 +864,7 @@ else:
                 res_suc = (
                     supabase.table("lotes")
                     .select("*")
+                    .eq("sucursal", sucursal_actual)
                     .order("fecha_carga", desc=True)
                     .execute()
                 )
@@ -920,6 +914,100 @@ else:
                     )
             except Exception as e:
                 st.error(f"Error al recuperar el historial: {e}")
+
+        # 🔹 Pestaña de Registro de Vales (Gestión y Seguimiento)
+        with tab_vales:
+            st.subheader("📋 Registro y Seguimiento de Vales Retenidos")
+
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                filtro_estado = st.selectbox(
+                    "Filtrar por Estado", ["Todos", "Pendiente", "Enviado", "Cancelado"]
+                )
+            with col_f2:
+                busqueda_vales = st.text_input(
+                    "🔍 Buscar por Nro de Ticket o T.T.",
+                    placeholder="Ej: 12345 o TT-001",
+                )
+
+            try:
+                query_v = (
+                    supabase.table("vales").select("*").eq("sucursal", sucursal_actual)
+                )
+                if filtro_estado != "Todos":
+                    query_v = query_v.eq("estado", filtro_estado)
+
+                res_vales_db = query_v.execute()
+                data_v = res_vales_db.data
+
+                if data_v:
+                    df_v_db = pd.DataFrame(data_v)
+
+                    if busqueda_vales:
+                        df_v_db = df_v_db[
+                            df_v_db["n_ticket"]
+                            .astype(str)
+                            .str.contains(busqueda_vales, case=False, na=False)
+                            | df_v_db["tt_tramitacion"]
+                            .astype(str)
+                            .str.contains(busqueda_vales, case=False, na=False)
+                        ]
+
+                    st.dataframe(df_v_db, use_container_width=True, hide_index=True)
+
+                    st.markdown("---")
+                    st.subheader("⚙️ Gestionar Vale Seleccionado")
+
+                    if not df_v_db.empty:
+                        ids_vales = df_v_db["id_vale"].tolist()
+                        vale_sel = st.selectbox(
+                            "Seleccione el ID / Vale a actualizar", ids_vales
+                        )
+
+                        vale_row = df_v_db[df_v_db["id_vale"] == vale_sel].iloc[0]
+
+                        st.info(
+                            f"**Obra Social:** {vale_row.get('obra_social')} | "
+                            f"**Plan:** {vale_row.get('plan')} | "
+                            f"**Ticket:** {vale_row.get('n_ticket')} | "
+                            f"**T.T.:** {vale_row.get('tt_tramitacion')} | "
+                            f"**Estado Actual:** {vale_row.get('estado')}"
+                        )
+
+                        col_acc1, col_acc2, col_acc3 = st.columns(3)
+                        with col_acc1:
+                            fecha_envio_real = st.date_input("Fecha de Envío Real")
+                            if st.button("Marcar como Enviado 🚀", type="primary"):
+                                supabase.table("vales").update(
+                                    {
+                                        "estado": "Enviado",
+                                        "fecha_resolucion": str(fecha_envio_real),
+                                    }
+                                ).eq("id_vale", vale_sel).execute()
+                                st.success("¡Vale actualizado a Enviado con éxito!")
+                                st.rerun()
+
+                        with col_acc2:
+                            if st.button("Cancelar / Refacturar ❌"):
+                                supabase.table("vales").update(
+                                    {"estado": "Cancelado"}
+                                ).eq("id_vale", vale_sel).execute()
+                                st.warning("El vale fue marcado como cancelado.")
+                                st.rerun()
+
+                        with col_acc3:
+                            if st.button("Eliminar Registro 🗑️"):
+                                supabase.table("vales").delete().eq(
+                                    "id_vale", vale_sel
+                                ).execute()
+                                st.error("El vale fue eliminado de la base de datos.")
+                                st.rerun()
+                else:
+                    st.info(
+                        "No hay vales registrados para esta sucursal con los filtros seleccionados."
+                    )
+            except Exception as e:
+                st.error(f"Error al cargar los vales desde la base de datos: {e}")
 
     elif rol == "mutual":
         st.header("🏥 Panel de Mutual / Obra Social")
