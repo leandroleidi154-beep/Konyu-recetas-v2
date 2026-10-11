@@ -136,11 +136,12 @@ def generar_pdf_bytes(
 
     pdf.ln(8)
 
-    # Cuadro de Totales Generales Resaltado
+    # Cuadro de Totales Generales Resaltado y Ajustado
     pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("Arial", "B", 10)
+    pdf.set_font(
+        "Arial", "B", 9
+    )  # Fuente optimizada para que entre perfecto en el ancho de 190
 
-    # Si total_envio llegó en 0 o vacío, usamos el acumulado calculado
     envio_final = total_envio if total_envio > 0 else total_fisico_acum
     vales_final = total_vales if total_vales > 0 else total_vales_acum
     procesadas_final = (
@@ -148,10 +149,10 @@ def generar_pdf_bytes(
     )
 
     texto_totales = (
-        f"TOTALES GENERALES:  "
+        f"TOTAL GENERAL:  "
         f"Procesadas (CSV): {procesadas_final}  |  "
         f"Vales Retenidos: {vales_final}  |  "
-        f"A Enviar (Teórico): {procesadas_final - vales_final}  |  "
+        f"A Enviar: {procesadas_final - vales_final}  |  "
         f"Físicas Enviadas: {envio_final}"
     )
 
