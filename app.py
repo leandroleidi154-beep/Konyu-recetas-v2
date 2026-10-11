@@ -58,73 +58,84 @@ class PDFComprobante(FPDF):
 
 
 def generar_pdf_bytes(
-    sucursal, fecha_str, ref_lote, total_envio, total_vales, df_os_resumen, df_vales_det
+    sucursal_nombre,
+    fecha_lote,
+    observacion,
+    total_envio,
+    total_vales,
+    df_resumen_os,
+    df_vales,
 ):
-    pdf = PDFComprobante(sucursal, fecha_str, ref_lote)
+    pdf = FPDF()
     pdf.add_page()
+    pdf.set_font("Arial", "B", 14)
 
-    # 1. Cuadro de Resumen por Obra Social
+    # Encabezado
+    pdf.cell(190, 8, f"Resumen de Lote - Sucursal: {sucursal_nombre}", 0, 1, "C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(
+        190, 6, f"Fecha del Lote: {fecha_lote} | Observación: {observacion}", 0, 1, "C"
+    )
+    pdf.ln(5)
+
+    # Tabla 1: Resumen por Obra Social
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 7, "1. Resumen por Obra Social (Recetas Enviadas)", 0, 1, "L")
-    pdf.ln(1)
+    pdf.cell(190, 8, "1. Resumen por Obra Social (Recetas Enviadas)", 0, 1, "L")
 
+    pdf.set_fill_color(220, 220, 220)
     pdf.set_font("Arial", "B", 9)
-    pdf.set_fill_color(230, 230, 230)
-    pdf.cell(90, 6, "Obra Social", 1, 0, "L", True)
-    pdf.cell(30, 6, "Total CSV", 1, 0, "C", True)
-    pdf.cell(30, 6, "Vales Retenidos", 1, 0, "C", True)
-    pdf.cell(40, 6, "A Enviar (Fisico)", 1, 1, "C", True)
+    pdf.cell(95, 7, "Obra Social", 1, 0, "C", True)
+    pdf.cell(30, 7, "Total CSV", 1, 0, "C", True)
+    pdf.cell(35, 7, "Vales Retenidos", 1, 0, "C", True)
+    pdf.cell(30, 7, "Físico Enviado", 1, 1, "C", True)
 
     pdf.set_font("Arial", "", 9)
-    if not df_os_resumen.empty:
-        for _, row_os in df_os_resumen.iterrows():
-            os_txt = str(row_os["Obra Social"])[:45]
-            pdf.cell(90, 6, os_txt, 1, 0, "L")
-            pdf.cell(30, 6, str(row_os["Total"]), 1, 0, "C")
-            pdf.cell(30, 6, str(row_os["Vales"]), 1, 0, "C")
-            pdf.cell(40, 6, str(row_os["A Enviar"]), 1, 1, "C")
-    else:
-        pdf.cell(190, 6, "Detalle por obra social no disponible.", 1, 1, "C")
+    if not df_resumen_os.empty:
+        for _, row_os in df_resumen_os.iterrows():
+            # Identificamos dinámicamente las columnas según el formato disponible
+            val_total = row_os.get("Total CSV", row_os.get("Total", 0))
+            val_vales = row_os.get("Vales Retenidos", row_os.get("Vales", 0))
+            val_fisico = row_os.get(
+                "Físico Enviado", row_os.get("A Enviar", val_total - val_vales)
+            )
 
-    pdf.ln(6)
+            pdf.cell(95, 6, str(row_os.get("Obra Social", "")), 1, 0, "L")
+            pdf.cell(30, 6, str(val_total), 1, 0, "C")
+            pdf.cell(35, 6, str(val_vales), 1, 0, "C")
+            pdf.cell(30, 6, str(val_fisico), 1, 1, "C")
 
-    # 2. Cuadro de Vales Retenidos
+    pdf.ln(5)
+
+    # Tabla 2: Detalle de Vales Retenidos
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(0, 7, "2. Detalle de Vales Retenidos (Pendientes en Sucursal)", 0, 1, "L")
-    pdf.ln(1)
+    pdf.cell(190, 8, "2. Detalle de Vales Retenidos en Sucursal", 0, 1, "L")
 
-    if not df_vales_det.empty:
-        pdf.set_font("Arial", "B", 8)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.cell(60, 6, "Obra Social", 1, 0, "L", True)
-        pdf.cell(45, 6, "Plan", 1, 0, "L", True)
-        pdf.cell(42, 6, "Nro Ticket", 1, 0, "C", True)
-        pdf.cell(43, 6, "T.T.", 1, 1, "C", True)
+    pdf.set_fill_color(220, 220, 220)
+    pdf.set_font("Arial", "B", 9)
+    pdf.cell(50, 7, "Obra Social", 1, 0, "C", True)
+    pdf.cell(45, 7, "Plan", 1, 0, "C", True)
+    pdf.cell(50, 7, "Nro Ticket", 1, 0, "C", True)
+    pdf.cell(45, 7, "T.T", 1, 1, "C", True)
 
-        pdf.set_font("Arial", "", 8)
-        for _, row_v in df_vales_det.iterrows():
-            pdf.cell(60, 6, str(row_v["Obra Social"])[:30], 1, 0, "L")
-            pdf.cell(45, 6, str(row_v["Plan"])[:22], 1, 0, "L")
-            pdf.cell(42, 6, str(row_v["Nro Ticket"]), 1, 0, "C")
-            pdf.cell(43, 6, str(row_v["T.T"]), 1, 1, "C")
+    pdf.set_font("Arial", "", 8)
+    if not df_vales.empty:
+        for _, row_v in df_vales.iterrows():
+            pdf.cell(50, 6, str(row_v.get("Obra Social", "")), 1, 0, "L")
+            pdf.cell(45, 6, str(row_v.get("Plan", "")), 1, 0, "L")
+            pdf.cell(50, 6, str(row_v.get("Nro Ticket", "")), 1, 0, "C")
+            pdf.cell(45, 6, str(row_v.get("T.T", "")), 1, 1, "C")
     else:
-        pdf.set_font("Arial", "I", 9)
-        pdf.cell(190, 6, "No se registraron vales retenidos en este lote.", 1, 1, "C")
+        pdf.cell(190, 6, "No se retuvieron vales en este lote.", 1, 1, "C")
 
-    pdf.ln(6)
-
-    # 3. Totales finales encuadrados
+    pdf.ln(5)
     pdf.set_font("Arial", "B", 10)
-    pdf.set_fill_color(245, 245, 245)
-    total_gral = total_envio + total_vales
     pdf.cell(
         190,
-        8,
-        f" TOTALES GENERALES:   Procesadas: {total_gral}  |  Enviadas: {total_envio}  |  Vales Retenidos: {total_vales}",
+        6,
+        f"Total Recetas Físicas Enviadas: {total_envio}  |  Total Vales Retenidos: {total_vales}",
+        0,
         1,
-        1,
-        "C",
-        True,
+        "R",
     )
 
     return pdf.output(dest="S").encode("latin1")
