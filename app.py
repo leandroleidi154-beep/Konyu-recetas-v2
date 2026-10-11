@@ -915,27 +915,42 @@ else:
             except Exception as e:
                 st.error(f"Error al recuperar el historial: {e}")
 
-        # 🔹 Pestaña de Registro de Vales (Gestión y Seguimiento)
+        # 📋 Pestaña de Registro y Gestión de Vales (Rediseñada y Multiselección)
         with tab_vales:
             st.subheader("📋 Registro y Seguimiento de Vales Retenidos")
 
-            col_f1, col_f2 = st.columns(2)
+            # 1. Filtros de Búsqueda
+            col_f1, col_f2, col_f3, col_f4 = st.columns([1.5, 1.5, 2, 1])
+
             with col_f1:
                 filtro_estado = st.selectbox(
-                    "Filtrar por Estado", ["Todos", "Pendiente", "Enviado", "Cancelado"]
+                    "Estado", ["Pendiente", "Todos", "Enviado", "Cancelado"]
                 )
+
             with col_f2:
+                usar_todas_fechas = st.checkbox("Ver todas las fechas", value=True)
+
+            with col_f3:
+                fecha_filtro_vales = st.date_input(
+                    "Fecha de Origen", disabled=usar_todas_fechas
+                )
+
+            with col_f4:
                 busqueda_vales = st.text_input(
-                    "🔍 Buscar por Nro de Ticket o T.T.",
-                    placeholder="Ej: 12345 o TT-001",
+                    "🔍 Ticket o T.T.", placeholder="Ej: 12345"
                 )
 
             try:
+                # 2. Consulta a Supabase
                 query_v = (
                     supabase.table("vales").select("*").eq("sucursal", sucursal_actual)
                 )
+
                 if filtro_estado != "Todos":
                     query_v = query_v.eq("estado", filtro_estado)
+
+                if not usar_todas_fechas:
+                    query_v = query_v.eq("fecha_origen", str(fecha_filtro_vales))
 
                 res_vales_db = query_v.execute()
                 data_v = res_vales_db.data
@@ -943,6 +958,7 @@ else:
                 if data_v:
                     df_v_db = pd.DataFrame(data_v)
 
+                    # Buscador por texto
                     if busqueda_vales:
                         df_v_db = df_v_db[
                             df_v_db["n_ticket"]
@@ -953,59 +969,118 @@ else:
                             .str.contains(busqueda_vales, case=False, na=False)
                         ]
 
-                    st.dataframe(df_v_db, use_container_width=True, hide_index=True)
-
-                    st.markdown("---")
-                    st.subheader("⚙️ Gestionar Vale Seleccionado")
-
                     if not df_v_db.empty:
-                        ids_vales = df_v_db["id_vale"].tolist()
-                        vale_sel = st.selectbox(
-                            "Seleccione el ID / Vale a actualizar", ids_vales
+                        # Columna auxiliar para selección múltiple
+                        df_v_db["Seleccionar"] = False
+
+                        st.info(f"Mostrando {len(df_v_db)} vales retenidos.")
+
+                        # 3. Tabla editable compacta con Checkbox
+                        df_editado_vales = st.data_editor(
+                            df_v_db[
+                                [
+                                    "Seleccionar",
+                                    "fecha_origen",
+                                    "obra_social",
+                                    "plan",
+                                    "n_ticket",
+                                    "tt_tramitacion",
+                                    "estado",
+                                    "id_vale",  # Mantenemos oculto internamente
+                                ]
+                            ],
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Seleccionar": st.column_config.CheckboxColumn(
+                                    "☑️",
+                                    help="Seleccioná los vales para procesar en lote.",
+                                    default=False,
+                                ),
+                                "fecha_origen": "Fecha",
+                                "obra_social": "Obra Social",
+                                "plan": "Plan",
+                                "n_ticket": "Nº Ticket",
+                                "tt_tramitacion": "T.T.",
+                                "estado": "Estado",
+                                "id_vale": None,  # Se oculta la columna
+                            },
+                            key="editor_multiseleccion_vales",
                         )
 
-                        vale_row = df_v_db[df_v_db["id_vale"] == vale_sel].iloc[0]
+                        # Filas seleccionadas por el usuario
+                        vales_seleccionados = df_editado_vales[
+                            df_editado_vales["Seleccionar"] == True
+                        ]
 
-                        st.info(
-                            f"**Obra Social:** {vale_row.get('obra_social')} | "
-                            f"**Plan:** {vale_row.get('plan')} | "
-                            f"**Ticket:** {vale_row.get('n_ticket')} | "
-                            f"**T.T.:** {vale_row.get('tt_tramitacion')} | "
-                            f"**Estado Actual:** {vale_row.get('estado')}"
-                        )
+                        st.markdown("---")
+                        st.subheader("⚙️ Acciones en Lote para Seleccionados")
 
-                        col_acc1, col_acc2, col_acc3 = st.columns(3)
-                        with col_acc1:
-                            fecha_envio_real = st.date_input("Fecha de Envío Real")
-                            if st.button("Marcar como Enviado 🚀", type="primary"):
-                                supabase.table("vales").update(
-                                    {
-                                        "estado": "Enviado",
-                                        "fecha_resolucion": str(fecha_envio_real),
-                                    }
-                                ).eq("id_vale", vale_sel).execute()
-                                st.success("¡Vale actualizado a Enviado con éxito!")
-                                st.rerun()
+                        if not vales_seleccionados.empty:
+                            cant_sel = len(vales_seleccionados)
+                            ids_a_procesar = vales_seleccionados["id_vale"].tolist()
 
-                        with col_acc2:
-                            if st.button("Cancelar / Refacturar ❌"):
-                                supabase.table("vales").update(
-                                    {"estado": "Cancelado"}
-                                ).eq("id_vale", vale_sel).execute()
-                                st.warning("El vale fue marcado como cancelado.")
-                                st.rerun()
+                            st.write(f"Has seleccionado **{cant_sel}** vale(s).")
 
-                        with col_acc3:
-                            if st.button("Eliminar Registro 🗑️"):
-                                supabase.table("vales").delete().eq(
-                                    "id_vale", vale_sel
-                                ).execute()
-                                st.error("El vale fue eliminado de la base de datos.")
-                                st.rerun()
+                            col_act1, col_act2, col_act3 = st.columns([2, 1.5, 1.5])
+
+                            with col_act1:
+                                fecha_envio_masivo = st.date_input(
+                                    "Fecha de Envío Real para los elegidos"
+                                )
+                                if st.button(
+                                    f"🚀 Marcar ({cant_sel}) como ENVIADOS",
+                                    type="primary",
+                                ):
+                                    for id_v in ids_a_procesar:
+                                        supabase.table("vales").update(
+                                            {
+                                                "estado": "Enviado",
+                                                "fecha_resolucion": str(
+                                                    fecha_envio_masivo
+                                                ),
+                                            }
+                                        ).eq("id_vale", id_v).execute()
+                                    st.success(
+                                        f"¡{cant_sel} vale(s) actualizados a Enviado!"
+                                    )
+                                    st.rerun()
+
+                            with col_act2:
+                                st.write("")
+                                st.write("")
+                                if st.button(f"❌ Cancelar ({cant_sel})"):
+                                    for id_v in ids_a_procesar:
+                                        supabase.table("vales").update(
+                                            {"estado": "Cancelado"}
+                                        ).eq("id_vale", id_v).execute()
+                                    st.warning(
+                                        f"{cant_sel} vale(s) marcados como cancelados."
+                                    )
+                                    st.rerun()
+
+                            with col_act3:
+                                st.write("")
+                                st.write("")
+                                if st.button(f"🗑️ Eliminar ({cant_sel})"):
+                                    for id_v in ids_a_procesar:
+                                        supabase.table("vales").delete().eq(
+                                            "id_vale", id_v
+                                        ).execute()
+                                    st.error(f"{cant_sel} vale(s) eliminados.")
+                                    st.rerun()
+                        else:
+                            st.caption(
+                                "👈 Tildá uno o más vales en la tabla de arriba para habilitar las acciones masivas."
+                            )
+
+                    else:
+                        st.info("No hay vales que coincidan con la búsqueda.")
                 else:
                     st.info(
-                        "No hay vales registrados para esta sucursal con los filtros seleccionados."
+                        "No hay vales registrados para esta sucursal con los filtros elegidos."
                     )
+
             except Exception as e:
                 st.error(f"Error al cargar los vales desde la base de datos: {e}")
 
