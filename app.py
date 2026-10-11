@@ -355,6 +355,13 @@ else:
     elif rol == "sucursal":
         st.header("🏪 Panel de Sucursal - Control y Generación de Lotes")
 
+        # Definimos la sucursal fija para toda la vista y evitar errores en las solapas
+        sucursal_actual = user.get("nombre", "Sucursal")
+
+        tab_cierre, tab_historial, tab_vales = st.tabs(
+            ["🔒 Cierre de Lote", "📜 Historial de Lotes", "📋 Registro de Vales"]
+        )
+
         # 🔹 Se agregan tres pestañas: Cierre, Historial y Registro de Vales
         tab_cierre, tab_historial, tab_vales = st.tabs(
             ["🔒 Cierre de Lote", "📜 Historial de Lotes", "📋 Registro de Vales"]
