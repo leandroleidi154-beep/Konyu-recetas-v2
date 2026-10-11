@@ -915,12 +915,11 @@ else:
             except Exception as e:
                 st.error(f"Error al recuperar el historial: {e}")
 
-        # 📋 Pestaña de Registro y Gestión de Vales (Rediseñada y Multiselección)
         # 📋 Pestaña de Registro y Gestión de Vales (Con selección acumulativa persistente)
+        # 📋 Pestaña de Registro y Gestión de Vales (Con acciones inteligentes por estado)
         with tab_vales:
             st.subheader("📋 Registro y Seguimiento de Vales Retenidos")
 
-            # Inicializar la lista de seleccionados en session_state si no existe
             if "vales_seleccionados_ids" not in st.session_state:
                 st.session_state["vales_seleccionados_ids"] = []
 
@@ -981,10 +980,10 @@ else:
 
                     if not df_v_db.empty:
                         st.info(
-                            f"Mostrando {len(df_v_db)} vales en pantalla. Tildá para sumar a la lista de envío."
+                            f"Mostrando {len(df_v_db)} vales en pantalla. Tildá para sumar a la lista."
                         )
 
-                        # Marcar cuáles ya estaban seleccionados previamente en la memoria
+                        # Marcar seleccionados guardados en sesión
                         df_v_db["Seleccionar"] = df_v_db["id_vale"].isin(
                             st.session_state["vales_seleccionados_ids"]
                         )
@@ -1020,7 +1019,7 @@ else:
                             key="editor_acumulativo_vales",
                         )
 
-                        # Sincronizar los cambios del editor con el session_state acumulativo
+                        # Sincronizar selección con el session_state
                         for _, row in df_editado_vales.iterrows():
                             vid = row["id_vale"]
                             seleccionado = row["Seleccionar"]
@@ -1042,7 +1041,6 @@ else:
                         ids_acumulados = st.session_state["vales_seleccionados_ids"]
 
                         if ids_acumulados:
-                            # Consultar los detalles completos de los vales seleccionados acumulados
                             res_acum = (
                                 supabase.table("vales")
                                 .select("*")
@@ -1052,7 +1050,6 @@ else:
                             if res_acum.data:
                                 df_acumulado = pd.DataFrame(res_acum.data)
 
-                                # Mostramos la lista limpia de lo que se va acumulando abajo
                                 st.dataframe(
                                     df_acumulado[
                                         [
@@ -1069,38 +1066,75 @@ else:
                                 )
 
                                 cant_total_sel = len(ids_acumulados)
-                                st.write(
-                                    f"Total seleccionados para acción masiva: **{cant_total_sel}** vales."
-                                )
+                                estados_presentes = set(df_acumulado["estado"].tolist())
+
+                                # Evaluación de estados para habilitar/deshabilitar acciones
+                                solo_pendientes = estados_presentes == {"Pendiente"}
+                                solo_enviados = estados_presentes == {"Enviado"}
+                                estados_mezclados = len(estados_presentes) > 1
+
+                                if estados_mezclados:
+                                    st.warning(
+                                        "⚠️ Seleccionaste vales con diferentes estados (ej. Pendientes y Enviados juntos). Procesa cada grupo por separado o utiliza las opciones globales de Cancelar/Eliminar."
+                                    )
 
                                 col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(
                                     [2, 1.5, 1.5, 1]
                                 )
 
                                 with col_acc1:
-                                    fecha_envio_masivo = st.date_input(
-                                        "Fecha de Envío Real"
-                                    )
-                                    if st.button(
-                                        f"🚀 Enviar ({cant_total_sel}) elegidos",
-                                        type="primary",
-                                    ):
-                                        for id_v in ids_acumulados:
-                                            supabase.table("vales").update(
-                                                {
-                                                    "estado": "Enviado",
-                                                    "fecha_resolucion": str(
-                                                        fecha_envio_masivo
-                                                    ),
-                                                }
-                                            ).eq("id_vale", id_v).execute()
-                                        st.session_state["vales_seleccionados_ids"] = (
-                                            []
-                                        )  # Limpiar lista
-                                        st.success(
-                                            f"¡{cant_total_sel} vale(s) marcados como Enviados!"
+                                    if solo_pendientes:
+                                        fecha_envio_masivo = st.date_input(
+                                            "Fecha de Envío Real"
                                         )
-                                        st.rerun()
+                                        if st.button(
+                                            f"🚀 Enviar ({cant_total_sel}) elegidos",
+                                            type="primary",
+                                        ):
+                                            for id_v in ids_acumulados:
+                                                supabase.table("vales").update(
+                                                    {
+                                                        "estado": "Enviado",
+                                                        "fecha_resolucion": str(
+                                                            fecha_envio_masivo
+                                                        ),
+                                                    }
+                                                ).eq("id_vale", id_v).execute()
+                                            st.session_state[
+                                                "vales_seleccionados_ids"
+                                            ] = []
+                                            st.success(
+                                                f"¡{cant_total_sel} vale(s) marcados como Enviados!"
+                                            )
+                                            st.rerun()
+
+                                    elif solo_enviados:
+                                        st.write("")
+                                        st.write("")
+                                        if st.button(
+                                            f"🔄 Revertir ({cant_total_sel}) a Pendiente",
+                                            type="secondary",
+                                        ):
+                                            for id_v in ids_acumulados:
+                                                supabase.table("vales").update(
+                                                    {
+                                                        "estado": "Pendiente",
+                                                        "fecha_resolucion": None,
+                                                    }
+                                                ).eq("id_vale", id_v).execute()
+                                            st.session_state[
+                                                "vales_seleccionados_ids"
+                                            ] = []
+                                            st.info(
+                                                f"¡{cant_total_sel} vale(s) devueltos al estado Pendiente!"
+                                            )
+                                            st.rerun()
+                                    else:
+                                        st.button(
+                                            "🚀 Enviar elegidos",
+                                            disabled=True,
+                                            help="No podés enviar registros que ya están marcados como Enviados.",
+                                        )
 
                                 with col_acc2:
                                     st.write("")
