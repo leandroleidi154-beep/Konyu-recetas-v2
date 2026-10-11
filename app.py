@@ -809,6 +809,36 @@ else:
                                 )
 
                                 if res_insert:
+                                    # Guardar los vales asociados en la tabla 'vales'
+                                    df_vales_a_guardar = df_activo[
+                                        df_activo["Es Vale"] == True
+                                    ]
+                                    supabase.table("vales").delete().eq(
+                                        "id_lote", id_lote_final
+                                    ).execute()
+
+                                    if not df_vales_a_guardar.empty:
+                                        vales_records = []
+                                        for idx, row_v in df_vales_a_guardar.iterrows():
+                                            vales_records.append(
+                                                {
+                                                    "id_vale": f"{id_lote_final}_VALE_{idx}",
+                                                    "id_lote": id_lote_final,
+                                                    "sucursal": sucursal_actual,
+                                                    "fecha_origen": fecha_str_db,
+                                                    "obra_social": row_v.get(
+                                                        "Obra Social"
+                                                    ),
+                                                    "plan": row_v.get("Plan"),
+                                                    "n_ticket": row_v.get("Nro Ticket"),
+                                                    "tt_tramitacion": row_v.get("T.T"),
+                                                    "estado": "Pendiente",
+                                                }
+                                            )
+                                        supabase.table("vales").insert(
+                                            vales_records
+                                        ).execute()
+
                                     st.session_state["lote_generado_exito"] = {
                                         "nombre": id_lote_final,
                                         "fecha": fecha_str_fmt,
