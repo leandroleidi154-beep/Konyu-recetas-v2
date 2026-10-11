@@ -362,11 +362,6 @@ else:
             ["🔒 Cierre de Lote", "📜 Historial de Lotes", "📋 Registro de Vales"]
         )
 
-        # 🔹 Se agregan tres pestañas: Cierre, Historial y Registro de Vales
-        tab_cierre, tab_historial, tab_vales = st.tabs(
-            ["🔒 Cierre de Lote", "📜 Historial de Lotes", "📋 Registro de Vales"]
-        )
-
         with tab_cierre:
             # Si ya se generó un lote con éxito
             if "lote_generado_exito" in st.session_state:
