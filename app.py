@@ -90,14 +90,21 @@ def generar_pdf_bytes(
     pdf.cell(30, 7, "Físico Enviado", 1, 1, "C", True)
 
     pdf.set_font("Arial", "", 9)
+    total_csv_acum = 0
+    total_vales_acum = 0
+    total_fisico_acum = 0
+
     if not df_resumen_os.empty:
         for _, row_os in df_resumen_os.iterrows():
-            # Identificamos dinámicamente las columnas según el formato disponible
             val_total = row_os.get("Total CSV", row_os.get("Total", 0))
             val_vales = row_os.get("Vales Retenidos", row_os.get("Vales", 0))
             val_fisico = row_os.get(
                 "Físico Enviado", row_os.get("A Enviar", val_total - val_vales)
             )
+
+            total_csv_acum += int(val_total)
+            total_vales_acum += int(val_vales)
+            total_fisico_acum += int(val_fisico)
 
             pdf.cell(95, 6, str(row_os.get("Obra Social", "")), 1, 0, "L")
             pdf.cell(30, 6, str(val_total), 1, 0, "C")
@@ -106,7 +113,7 @@ def generar_pdf_bytes(
 
     pdf.ln(5)
 
-    # Tabla 2: Detalle de Vales Retenidos
+    # Tabla 2: Detalle de Vales Retenidos en Sucursal
     pdf.set_font("Arial", "B", 11)
     pdf.cell(190, 8, "2. Detalle de Vales Retenidos en Sucursal", 0, 1, "L")
 
@@ -127,16 +134,28 @@ def generar_pdf_bytes(
     else:
         pdf.cell(190, 6, "No se retuvieron vales en este lote.", 1, 1, "C")
 
-    pdf.ln(5)
+    pdf.ln(8)
+
+    # Cuadro de Totales Generales Resaltado
+    pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", "B", 10)
-    pdf.cell(
-        190,
-        6,
-        f"Total Recetas Físicas Enviadas: {total_envio}  |  Total Vales Retenidos: {total_vales}",
-        0,
-        1,
-        "R",
+
+    # Si total_envio llegó en 0 o vacío, usamos el acumulado calculado
+    envio_final = total_envio if total_envio > 0 else total_fisico_acum
+    vales_final = total_vales if total_vales > 0 else total_vales_acum
+    procesadas_final = (
+        total_csv_acum if total_csv_acum > 0 else (envio_final + vales_final)
     )
+
+    texto_totales = (
+        f"TOTALES GENERALES:  "
+        f"Procesadas (CSV): {procesadas_final}  |  "
+        f"Vales Retenidos: {vales_final}  |  "
+        f"A Enviar (Teórico): {procesadas_final - vales_final}  |  "
+        f"Físicas Enviadas: {envio_final}"
+    )
+
+    pdf.cell(190, 10, texto_totales, 1, 1, "C", True)
 
     return pdf.output(dest="S").encode("latin1")
 
