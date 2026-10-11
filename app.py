@@ -922,7 +922,6 @@ else:
             except Exception as e:
                 st.error(f"Error al recuperar el historial: {e}")
 
-        # 📋 Pestaña de Registro y Gestión de Vales (Con selección acumulativa persistente)
         # 📋 Pestaña de Registro y Gestión de Vales (Con acciones inteligentes por estado)
         with tab_vales:
             st.subheader("📋 Registro y Seguimiento de Vales Retenidos")
@@ -1075,14 +1074,16 @@ else:
                                 cant_total_sel = len(ids_acumulados)
                                 estados_presentes = set(df_acumulado["estado"].tolist())
 
-                                # Evaluación de estados para habilitar/deshabilitar acciones
+                                # Evaluación de estados
                                 solo_pendientes = estados_presentes == {"Pendiente"}
                                 solo_enviados = estados_presentes == {"Enviado"}
+                                solo_cancelados = estados_presentes == {"Cancelado"}
+                                solo_revertibles = solo_enviados or solo_cancelados
                                 estados_mezclados = len(estados_presentes) > 1
 
                                 if estados_mezclados:
                                     st.warning(
-                                        "⚠️ Seleccionaste vales con diferentes estados (ej. Pendientes y Enviados juntos). Procesa cada grupo por separado o utiliza las opciones globales de Cancelar/Eliminar."
+                                        "⚠️ Seleccionaste vales con diferentes estados. Te recomendamos procesar cada grupo por separado."
                                     )
 
                                 col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(
@@ -1115,7 +1116,7 @@ else:
                                             )
                                             st.rerun()
 
-                                    elif solo_enviados:
+                                    elif solo_revertibles:
                                         st.write("")
                                         st.write("")
                                         if st.button(
@@ -1140,7 +1141,7 @@ else:
                                         st.button(
                                             "🚀 Enviar elegidos",
                                             disabled=True,
-                                            help="No podés enviar registros que ya están marcados como Enviados.",
+                                            help="No podés enviar registros que ya están Enviados o Cancelados.",
                                         )
 
                                 with col_acc2:
