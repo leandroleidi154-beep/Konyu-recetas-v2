@@ -1206,19 +1206,15 @@ else:
         except Exception:
             lista_sucursales = ["sucursal_1"]
 
-        # Selector global de sucursal para que el operador de la mutual elija qué sucursal auditar
         sucursal_seleccionada = st.selectbox(
             "🏢 Seleccione la Sucursal a Auditar:", lista_sucursales
         )
-
         st.markdown("---")
-
-        # Pestañas principales para el sector de mutuales
         tab_lotes_mutual, tab_vales_mutual = st.tabs(
             ["📦 Recepción de Lotes", "🎫 Seguimiento y Recepción de Vales"]
         )
 
-        # --- PESTAÑA 1: RECEPCIÓN DE LOTES ---
+        # --- PESTAÑA 1: RECEPCIÓN DE LOTES (Con opción de Revertir y Descarga de PDF) ---
         with tab_lotes_mutual:
             st.subheader(f"📦 Lotes de Recetas de la sucursal: {sucursal_seleccionada}")
             try:
@@ -1238,10 +1234,11 @@ else:
                         ):
                             st.write(f"**Observación:** {lote_m.get('observacion')}")
                             st.write(
-                                f"**Fecha de creación en sistema:** {lote_m.get('created_at')}"
+                                f"**Fecha de creación:** {lote_m.get('created_at')}"
                             )
 
                             col_m1, col_m2 = st.columns(2)
+
                             with col_m1:
                                 if estado_lote != "Recibido por Mutual":
                                     if st.button(
@@ -1257,7 +1254,41 @@ else:
                                         st.rerun()
                                 else:
                                     st.info(
-                                        "👍 Este lote ya cuenta con el OK de recepción de la mutual."
+                                        "👍 Este lote ya cuenta con el OK de recepción."
+                                    )
+                                    if st.button(
+                                        f"🔄 Revertir Lote a 'Cerrado'",
+                                        key=f"rev_lote_{lote_m.get('id_lote')}",
+                                    ):
+                                        supabase.table("lotes").update(
+                                            {"estado": "Cerrado"}
+                                        ).eq("id_lote", lote_m.get("id_lote")).execute()
+                                        st.warning(
+                                            "Se ha revertido el estado del lote."
+                                        )
+                                        st.rerun()
+
+                            with col_m2:
+                                st.write("📄 **Comprobante PDF**")
+                                if st.button(
+                                    "📥 Descargar Resumen PDF",
+                                    key=f"pdf_mut_{lote_m.get('id_lote')}",
+                                ):
+                                    pdf_bytes_mut = generar_pdf_bytes(
+                                        str(lote_m.get("sucursal")),
+                                        str(lote_m.get("fecha_carga")),
+                                        str(lote_m.get("observacion")),
+                                        0,
+                                        0,
+                                        pd.DataFrame(),
+                                        pd.DataFrame(),
+                                    )
+                                    st.download_button(
+                                        label="💾 Guardar PDF en equipo",
+                                        data=pdf_bytes_mut,
+                                        file_name=f"Comprobante_Lote_{lote_m.get('fecha_carga')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_pdf_mut_{lote_m.get('id_lote')}",
                                     )
                 else:
                     st.info(
@@ -1338,22 +1369,35 @@ else:
                         cant_mut = len(ids_mut_procesar)
 
                         st.markdown("---")
-                        st.write(
-                            f"Has seleccionado **{cant_mut}** vale(s) para confirmar su recepción física en la mutual."
-                        )
+                        st.write(f"Has seleccionado **{cant_mut}** vale(s).")
 
-                        if st.button(
-                            f"📥 Confirmar Recepción Física ({cant_mut}) Vales",
-                            type="primary",
-                        ):
-                            for id_vm in ids_mut_procesar:
-                                supabase.table("vales").update(
-                                    {"estado": "Recibido por Mutual"}
-                                ).eq("id_vale", id_vm).execute()
-                            st.success(
-                                f"¡Se confirmó la recepción física de {cant_mut} vale(s)!"
-                            )
-                            st.rerun()
+                        col_m_acc1, col_m_acc2 = st.columns(2)
+                        with col_m_acc1:
+                            if st.button(
+                                f"📥 Confirmar Recepción Física ({cant_mut}) Vales",
+                                type="primary",
+                            ):
+                                for id_vm in ids_mut_procesar:
+                                    supabase.table("vales").update(
+                                        {"estado": "Recibido por Mutual"}
+                                    ).eq("id_vale", id_vm).execute()
+                                st.success(
+                                    f"¡Se confirmó la recepción física de {cant_mut} vale(s)!"
+                                )
+                                st.rerun()
+                        with col_m_acc2:
+                            if st.button(f"🔄 Revertir ({cant_mut}) Vales a Pendiente"):
+                                for id_vm in ids_mut_procesar:
+                                    supabase.table("vales").update(
+                                        {
+                                            "estado": "Pendiente",
+                                            "fecha_resolucion": None,
+                                        }
+                                    ).eq("id_vale", id_vm).execute()
+                                st.warning(
+                                    f"Se revirtieron {cant_mut} vale(s) a estado pendiente."
+                                )
+                                st.rerun()
                 else:
                     st.info(
                         f"No hay vales con el estado '{filtro_estado_mutual}' para esta sucursal."
