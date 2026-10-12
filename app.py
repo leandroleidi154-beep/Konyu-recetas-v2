@@ -935,8 +935,14 @@ else:
             with col_f1:
                 filtro_estado = st.selectbox(
                     "Estado",
-                    ["Pendiente", "Todos", "Enviado", "Cancelado"],
-                    key="vales_filtro_estado",
+                    [
+                        "Todos",
+                        "Pendiente",
+                        "Enviado",
+                        "Recibido por Mutual",
+                        "Cancelado",
+                    ],
+                    key="filtro_estado_vales_sucursal",
                 )
             with col_f2:
                 usar_todas_fechas = st.checkbox(
