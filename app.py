@@ -1190,6 +1190,177 @@ else:
         st.header("🏥 Panel de Mutual / Obra Social")
         st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
 
+        # Obtenemos la lista de sucursales disponibles desde la base de datos de usuarios o lotes
+        try:
+            res_sucursales = (
+                supabase.table("usuarios")
+                .select("nombre")
+                .eq("rol", "Sucursal")
+                .execute()
+            )
+            lista_sucursales = (
+                [s["nombre"] for s in res_sucursales.data]
+                if res_sucursales.data
+                else ["sucursal_1"]
+            )
+        except Exception:
+            lista_sucursales = ["sucursal_1"]
+
+        # Selector global de sucursal para que el operador de la mutual elija qué sucursal auditar
+        sucursal_seleccionada = st.selectbox(
+            "🏢 Seleccione la Sucursal a Auditar:", lista_sucursales
+        )
+
+        st.markdown("---")
+
+        # Pestañas principales para el sector de mutuales
+        tab_lotes_mutual, tab_vales_mutual = st.tabs(
+            ["📦 Recepción de Lotes", "🎫 Seguimiento y Recepción de Vales"]
+        )
+
+        # --- PESTAÑA 1: RECEPCIÓN DE LOTES ---
+        with tab_lotes_mutual:
+            st.subheader(f"📦 Lotes de Recetas de la sucursal: {sucursal_seleccionada}")
+            try:
+                res_lotes_mut = (
+                    supabase.table("lotes")
+                    .select("*")
+                    .eq("sucursal", sucursal_seleccionada)
+                    .order("fecha_carga", desc=True)
+                    .execute()
+                )
+
+                if res_lotes_mut.data:
+                    for lote_m in res_lotes_mut.data:
+                        estado_lote = lote_m.get("estado", "Cerrado")
+                        with st.expander(
+                            f"📁 Lote: {lote_m.get('id_lote')} — Fecha: {lote_m.get('fecha_carga')} — Estado: [{estado_lote}]"
+                        ):
+                            st.write(f"**Observación:** {lote_m.get('observacion')}")
+                            st.write(
+                                f"**Fecha de creación en sistema:** {lote_m.get('created_at')}"
+                            )
+
+                            col_m1, col_m2 = st.columns(2)
+                            with col_m1:
+                                if estado_lote != "Recibido por Mutual":
+                                    if st.button(
+                                        f"✅ Marcar Lote como RECIBIDO",
+                                        key=f"ok_lote_{lote_m.get('id_lote')}",
+                                    ):
+                                        supabase.table("lotes").update(
+                                            {"estado": "Recibido por Mutual"}
+                                        ).eq("id_lote", lote_m.get("id_lote")).execute()
+                                        st.success(
+                                            "¡Lote marcado como recibido con éxito!"
+                                        )
+                                        st.rerun()
+                                else:
+                                    st.info(
+                                        "👍 Este lote ya cuenta con el OK de recepción de la mutual."
+                                    )
+                else:
+                    st.info(
+                        f"No hay lotes registrados para la sucursal {sucursal_seleccionada}."
+                    )
+            except Exception as e:
+                st.error(f"Error al cargar los lotes para la mutual: {e}")
+
+        # --- PESTAÑA 2: SEGUIMIENTO Y RECEPCIÓN DE VALES ---
+        with tab_vales_mutual:
+            st.subheader(
+                f"🎫 Vales Retenidos y En Tránsito — Sucursal: {sucursal_seleccionada}"
+            )
+
+            filtro_estado_mutual = st.selectbox(
+                "Filtrar Vales por Estado",
+                ["Enviado", "Pendiente", "Recibido por Mutual", "Todos"],
+                key="mutual_filtro_estado_vales",
+            )
+
+            try:
+                query_vales_mut = (
+                    supabase.table("vales")
+                    .select("*")
+                    .eq("sucursal", sucursal_seleccionada)
+                )
+
+                if filtro_estado_mutual != "Todos":
+                    query_vales_mut = query_vales_mut.eq("estado", filtro_estado_mutual)
+
+                res_v_mut = query_vales_mut.execute()
+                data_v_mut = res_v_mut.data
+
+                if data_v_mut:
+                    df_v_mut = pd.DataFrame(data_v_mut)
+                    df_v_mut["Seleccionar"] = False
+
+                    st.info(
+                        f"Se encontraron {len(df_v_mut)} registros de vales para la sucursal seleccionada."
+                    )
+
+                    df_edit_mut = st.data_editor(
+                        df_v_mut[
+                            [
+                                "Seleccionar",
+                                "fecha_origen",
+                                "obra_social",
+                                "plan",
+                                "n_ticket",
+                                "tt_tramitacion",
+                                "estado",
+                                "fecha_resolucion",
+                                "id_vale",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Seleccionar": st.column_config.CheckboxColumn(
+                                "☑️", default=False
+                            ),
+                            "fecha_origen": "Fecha Origen",
+                            "obra_social": "Obra Social",
+                            "plan": "Plan",
+                            "n_ticket": "Nº Ticket",
+                            "tt_tramitacion": "T.T.",
+                            "estado": "Estado",
+                            "fecha_resolucion": "Fecha Envío Sucursal",
+                            "id_vale": None,
+                        },
+                        key="editor_vales_mutual",
+                    )
+
+                    vales_sel_mut = df_edit_mut[df_edit_mut["Seleccionar"] == True]
+
+                    if not vales_sel_mut.empty:
+                        ids_mut_procesar = vales_sel_mut["id_vale"].tolist()
+                        cant_mut = len(ids_mut_procesar)
+
+                        st.markdown("---")
+                        st.write(
+                            f"Has seleccionado **{cant_mut}** vale(s) para confirmar su recepción física en la mutual."
+                        )
+
+                        if st.button(
+                            f"📥 Confirmar Recepción Física ({cant_mut}) Vales",
+                            type="primary",
+                        ):
+                            for id_vm in ids_mut_procesar:
+                                supabase.table("vales").update(
+                                    {"estado": "Recibido por Mutual"}
+                                ).eq("id_vale", id_vm).execute()
+                            st.success(
+                                f"¡Se confirmó la recepción física de {cant_mut} vale(s)!"
+                            )
+                            st.rerun()
+                else:
+                    st.info(
+                        f"No hay vales con el estado '{filtro_estado_mutual}' para esta sucursal."
+                    )
+
+            except Exception as e:
+                st.error(f"Error al consultar los vales en el panel de mutuales: {e}")
     else:
         st.warning(
             "El usuario actual no tiene un rol válido asignado en la base de datos."
