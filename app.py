@@ -1220,10 +1220,6 @@ else:
         sucursal_seleccionada = st.selectbox(
             "🏢 Seleccione la Sucursal a Auditar:", lista_sucursales
         )
-        st.markdown("---")
-        tab_lotes_mutual, tab_vales_mutual = st.tabs(
-            ["📦 Recepción de Lotes", "🎫 Seguimiento y Recepción de Vales"]
-        )
 
         # Pestañas principales para el sector de mutuales (Agregamos la pestaña de Vales Recibidos)
         tab_lotes_mutual, tab_vales_mutual, tab_vales_recibidos_mut = st.tabs(
