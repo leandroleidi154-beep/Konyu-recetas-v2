@@ -163,11 +163,7 @@ def generar_pdf_bytes(
 if st.session_state["usuario_logueado"] is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        try:
-            st.image("assets/konyu_login.png", width=120)
-        except Exception:
-            pass
-        st.title("Konyu Recetas - Sistema de Gestión de Recetas")
+        st.title("💊 Konyu Recetas")
         st.subheader("Acceso al Sistema")
         usuario_input = st.text_input("Usuario")
         password_input = st.text_input("Contraseña", type="password")
@@ -197,47 +193,34 @@ if st.session_state["usuario_logueado"] is None:
 # --- PANEL PRINCIPAL (USUARIO LOGUEADO) ---
 else:
     user = st.session_state["usuario_logueado"]
-    with st.sidebar:
-        # Foto de Konyu + Título en el menú lateral
-        col_side_img, col_side_txt = st.columns([1, 2.5])
-        with col_side_img:
-            try:
-                st.image("assets/konyu_sidebar.png", width=65)
-            except Exception:
-                pass
-        with col_side_txt:
-            st.markdown(
-                "<h3 style='margin: 0; padding-top: 5px;'>Konyu Recetas</h3>",
-                unsafe_allow_html=True,
-            )
+    st.sidebar.title("💊 Konyu Recetas")
+    st.sidebar.write(f"**Usuario:** {user.get('nombre', 'Desconocido')}")
+    st.sidebar.write(f"**Rol:** {user.get('rol', 'Sin Rol')}")
 
-        st.markdown("---")
+    if st.sidebar.button("Cerrar Sesión", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
 
-        # Datos de usuario y rol con texto más grande y prolijo
-        nom_usr = user.get("nombre", "Desconocido")
-        rol_usr = str(user.get("rol", "Sin Rol")).capitalize()
-
-        st.markdown(
-            f"""
-            <div style="font-size: 17px; line-height: 1.8; margin-bottom: 15px;">
-                <b>👤 Usuario:</b> <span style="color: #ff4b4b; font-weight: bold;">{nom_usr}</span><br>
-                <b>🔑 Rol:</b> <span>{rol_usr}</span>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
-
-        st.markdown("---")
+    st.sidebar.markdown("---")
 
     rol = str(user.get("rol", "")).lower()
 
     # Vistas según el rol asignado
     if rol == "administrador":
-        st.header("👑 Panel de Administrador - Gestión de Usuarios")
+        col_head_left, col_head_right = st.columns([3, 1])
+
+        with col_head_left:
+            st.header("👑 Panel de Administrador - Gestión de Usuarios")
+
+        with col_head_right:
+            try:
+                st.image("assets/konyu_header.png", width=90)
+                st.markdown(
+                    "<p style='color: rgba(250, 250, 250, 0.55); font-style: italic; font-size: 13px; margin-top: -5px;'>“Konyu supervisando el sistema...”</p>",
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                pass
 
         tab1, tab2, tab3 = st.tabs(
             [
@@ -382,7 +365,20 @@ else:
                 st.error(f"Error al recuperar el historial: {e}")
 
     elif rol == "sucursal":
-        st.header("🏪 Panel de Sucursal - Control y Generación de Lotes")
+        col_head_left, col_head_right = st.columns([3, 1])
+
+        with col_head_left:
+            st.header("🏪 Panel de Sucursal - Control y Generación de Lotes")
+
+        with col_head_right:
+            try:
+                st.image("assets/konyu_header.png", width=90)
+                st.markdown(
+                    "<p style='color: rgba(250, 250, 250, 0.55); font-style: italic; font-size: 13px; margin-top: -5px;'>“Konyu supervisando el stock...”</p>",
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                pass
 
         # Definimos la sucursal fija para toda la vista y evitar errores en las solapas
         sucursal_actual = user.get("nombre", "Sucursal")
@@ -399,35 +395,41 @@ else:
                     f"¡Lote del día **{lote_info['fecha']}** guardado y cerrado con éxito!"
                 )
                 st.markdown("---")
-                st.subheader("📄 Resumen y Comprobante para Mutuales")
-                st.info(
-                    f"Resumen: {lote_info['total_envio']} recetas enviadas a mutuales | {lote_info['total_vales']} recetas retenidas como vales."
-                )
+                col_resumen_txt, col_konyu_lote = st.columns([2, 1])
 
-                pdf_bytes = generar_pdf_bytes(
-                    user.get("nombre", "Sucursal"),
-                    lote_info["fecha"],
-                    lote_info["referencia"],
-                    lote_info["total_envio"],
-                    lote_info["total_vales"],
-                    lote_info.get("resumen_os", pd.DataFrame()),
-                    lote_info.get("df_vales", pd.DataFrame()),
-                )
+                with col_resumen_txt:
+                    st.subheader("📄 Resumen y Comprobante para Mutuales")
+                    st.info(
+                        f"Resumen: {lote_info['total_envio']} recetas enviadas a mutuales | {lote_info['total_vales']} recetas retenidas como vales."
+                    )
 
-                st.download_button(
-                    label="📥 Descargar Resumen en PDF",
-                    data=pdf_bytes,
-                    file_name=f"Resumen_Lote_{lote_info['fecha'].replace('/', '-')}.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                )
+                    pdf_bytes = generar_pdf_bytes(
+                        user.get("nombre", "Sucursal"),
+                        lote_info["fecha"],
+                        lote_info["referencia"],
+                        lote_info["total_envio"],
+                        lote_info["total_vales"],
+                        lote_info.get("resumen_os", pd.DataFrame()),
+                        lote_info.get("df_vales", pd.DataFrame()),
+                    )
 
-                st.markdown("---")
-                if st.button("➕ Cargar un nuevo lote o archivo", type="secondary"):
-                    u_actual = st.session_state.get("usuario_logueado")
-                    st.session_state.clear()
-                    st.session_state["usuario_logueado"] = u_actual
-                    st.rerun()
+                    st.download_button(
+                        label="📥 Descargar Resumen en PDF",
+                        data=pdf_bytes,
+                        file_name=f"Resumen_Lote_{lote_info['fecha'].replace('/', '-')}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                    )
+
+                with col_konyu_lote:
+                    try:
+                        st.image("assets/konyu_lote.png", width=110)
+                        st.markdown(
+                            "<p style='color: rgba(250, 250, 250, 0.6); font-style: italic; font-size: 12px;'>“¡Lote listo para enviar a Mutuales!” 🐾</p>",
+                            unsafe_allow_html=True,
+                        )
+                    except Exception:
+                        pass
             else:
                 # PASO 1: SELECCIÓN DE FECHA Y COMPROBACIÓN DE LOTE PREVIO
                 st.subheader("1️⃣ Paso 1: Seleccioná la Fecha de las Recetas")
@@ -1227,8 +1229,21 @@ else:
                 st.error(f"Error al cargar los vales desde la base de datos: {e}")
 
     elif rol == "mutual":
-        st.header("🏥 Panel de Mutual / Obra Social")
-        st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
+        col_head_left, col_head_right = st.columns([3, 1])
+
+        with col_head_left:
+            st.header("🏥 Panel de Mutual / Obra Social")
+            st.write("Bienvenido al módulo de auditoría de recetas y lotes enviados.")
+
+        with col_head_right:
+            try:
+                st.image("assets/konyu_header.png", width=90)
+                st.markdown(
+                    "<p style='color: rgba(250, 250, 250, 0.55); font-style: italic; font-size: 13px; margin-top: -5px;'>“Konyu auditando auditorías...”</p>",
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                pass
 
         # Obtenemos la lista de sucursales disponibles desde la base de datos de usuarios o lotes
         try:
