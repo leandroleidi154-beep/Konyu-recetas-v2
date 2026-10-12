@@ -161,10 +161,9 @@ def generar_pdf_bytes(
 
 # --- PANTALLA DE LOGIN ---
 if st.session_state["usuario_logueado"] is None:
-    st.title("💊 Konyu Recetas - Iniciar Sesión")
-
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        st.title("💊 Konyu Recetas")
         st.subheader("Acceso al Sistema")
         usuario_input = st.text_input("Usuario")
         password_input = st.text_input("Contraseña", type="password")
