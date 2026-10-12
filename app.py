@@ -163,7 +163,13 @@ def generar_pdf_bytes(
 if st.session_state["usuario_logueado"] is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.title("💊 Konyu Recetas")
+        try:
+            st.image(
+                "assets/konyu_login.png", width=180
+            )  # <-- Aumentamos el tamaño a 180
+        except Exception:
+            pass
+        st.title("Konyu Recetas - Sistema de Gestión de Recetas")
         st.subheader("Acceso al Sistema")
         usuario_input = st.text_input("Usuario")
         password_input = st.text_input("Contraseña", type="password")
@@ -193,15 +199,41 @@ if st.session_state["usuario_logueado"] is None:
 # --- PANEL PRINCIPAL (USUARIO LOGUEADO) ---
 else:
     user = st.session_state["usuario_logueado"]
-    st.sidebar.title("💊 Konyu Recetas")
-    st.sidebar.write(f"**Usuario:** {user.get('nombre', 'Desconocido')}")
-    st.sidebar.write(f"**Rol:** {user.get('rol', 'Sin Rol')}")
+    with st.sidebar:
+        # Foto de Konyu grande + Título en el menú lateral
+        col_side_img, col_side_txt = st.columns([1, 2.5])
+        with col_side_img:
+            try:
+                st.image("assets/konyu_sidebar.png", width=95)
+            except Exception:
+                pass
+        with col_side_txt:
+            st.markdown(
+                "<h3 style='margin: 0; padding-top: 5px;'>Konyu Recetas</h3>",
+                unsafe_allow_html=True,
+            )
 
-    if st.sidebar.button("Cerrar Sesión", use_container_width=True):
-        st.session_state.clear()
-        st.rerun()
+        st.markdown("---")
 
-    st.sidebar.markdown("---")
+        # Datos de usuario y rol con texto más grande y prolijo
+        nom_usr = user.get("nombre", "Desconocido")
+        rol_usr = str(user.get("rol", "Sin Rol")).capitalize()
+
+        st.markdown(
+            f"""
+            <div style="font-size: 17px; line-height: 1.8; margin-bottom: 15px;">
+                <b>👤 Usuario:</b> <span style="color: #ff4b4b; font-weight: bold;">{nom_usr}</span><br>
+                <b>🔑 Rol:</b> <span>{rol_usr}</span>
+            </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+
+        st.markdown("---")
 
     rol = str(user.get("rol", "")).lower()
 
