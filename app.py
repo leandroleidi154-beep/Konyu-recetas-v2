@@ -1219,7 +1219,12 @@ else:
             ["📦 Recepción de Lotes", "🎫 Seguimiento y Recepción de Vales"]
         )
 
-        # --- PESTAÑA 1: RECEPCIÓN DE LOTES (Con opción de Revertir y Descarga de PDF) ---
+        # Pestañas principales para el sector de mutuales (Agregamos la pestaña de Vales Recibidos)
+        tab_lotes_mutual, tab_vales_mutual, tab_vales_recibidos_mut = st.tabs(
+            ["📦 Recepción de Lotes", "🎫 Seguimiento y Vales", "✅ Vales Recibidos"]
+        )
+
+        # --- PESTAÑA 1: RECEPCIÓN DE LOTES ---
         with tab_lotes_mutual:
             st.subheader(f"📦 Lotes de Recetas de la sucursal: {sucursal_seleccionada}")
             try:
@@ -1276,7 +1281,7 @@ else:
                             with col_m2:
                                 st.write("📄 **Comprobante PDF**")
                                 if st.button(
-                                    "📥 Descargar Resumen PDF",
+                                    f"📥 Descargar Resumen PDF",
                                     key=f"pdf_mut_{lote_m.get('id_lote')}",
                                 ):
                                     pdf_bytes_mut = generar_pdf_bytes(
@@ -1302,37 +1307,28 @@ else:
             except Exception as e:
                 st.error(f"Error al cargar los lotes para la mutual: {e}")
 
-        # --- PESTAÑA 2: SEGUIMIENTO Y RECEPCIÓN DE VALES ---
+        # --- PESTAÑA 2: SEGUIMIENTO Y VALES EN TRÁNSITO/PENDIENTES ---
         with tab_vales_mutual:
             st.subheader(
-                f"🎫 Vales Retenidos y En Tránsito — Sucursal: {sucursal_seleccionada}"
-            )
-
-            filtro_estado_mutual = st.selectbox(
-                "Filtrar Vales por Estado",
-                ["Enviado", "Pendiente", "Recibido por Mutual", "Todos"],
-                key="mutual_filtro_estado_vales",
+                f"🎫 Vales En Tránsito o Pendientes — Sucursal: {sucursal_seleccionada}"
             )
 
             try:
-                query_vales_mut = (
+                # Mostramos por defecto los vales que están Enviados o Pendientes para que la mutual los gestione
+                res_v_mut = (
                     supabase.table("vales")
                     .select("*")
                     .eq("sucursal", sucursal_seleccionada)
+                    .in_("estado", ["Enviado", "Pendiente"])
+                    .execute()
                 )
 
-                if filtro_estado_mutual != "Todos":
-                    query_vales_mut = query_vales_mut.eq("estado", filtro_estado_mutual)
-
-                res_v_mut = query_vales_mut.execute()
-                data_v_mut = res_v_mut.data
-
-                if data_v_mut:
-                    df_v_mut = pd.DataFrame(data_v_mut)
+                if res_v_mut.data:
+                    df_v_mut = pd.DataFrame(res_v_mut.data)
                     df_v_mut["Seleccionar"] = False
 
                     st.info(
-                        f"Se encontraron {len(df_v_mut)} registros de vales para la sucursal seleccionada."
+                        f"Se encontraron {len(df_v_mut)} vales pendientes o en tránsito."
                     )
 
                     df_edit_mut = st.data_editor(
@@ -1364,7 +1360,7 @@ else:
                             "fecha_resolucion": "Fecha Envío Sucursal",
                             "id_vale": None,
                         },
-                        key="editor_vales_mutual",
+                        key="editor_vales_mutual_transito",
                     )
 
                     vales_sel_mut = df_edit_mut[df_edit_mut["Seleccionar"] == True]
@@ -1374,42 +1370,107 @@ else:
                         cant_mut = len(ids_mut_procesar)
 
                         st.markdown("---")
-                        st.write(f"Has seleccionado **{cant_mut}** vale(s).")
-
-                        col_m_acc1, col_m_acc2 = st.columns(2)
-                        with col_m_acc1:
-                            if st.button(
-                                f"📥 Confirmar Recepción Física ({cant_mut}) Vales",
-                                type="primary",
-                            ):
-                                for id_vm in ids_mut_procesar:
-                                    supabase.table("vales").update(
-                                        {"estado": "Recibido por Mutual"}
-                                    ).eq("id_vale", id_vm).execute()
-                                st.success(
-                                    f"¡Se confirmó la recepción física de {cant_mut} vale(s)!"
-                                )
-                                st.rerun()
-                        with col_m_acc2:
-                            if st.button(f"🔄 Revertir ({cant_mut}) Vales a Pendiente"):
-                                for id_vm in ids_mut_procesar:
-                                    supabase.table("vales").update(
-                                        {
-                                            "estado": "Pendiente",
-                                            "fecha_resolucion": None,
-                                        }
-                                    ).eq("id_vale", id_vm).execute()
-                                st.warning(
-                                    f"Se revirtieron {cant_mut} vale(s) a estado pendiente."
-                                )
-                                st.rerun()
+                        if st.button(
+                            f"📥 Confirmar Recepción Física ({cant_mut}) Vales",
+                            type="primary",
+                        ):
+                            for id_vm in ids_mut_procesar:
+                                supabase.table("vales").update(
+                                    {"estado": "Recibido por Mutual"}
+                                ).eq("id_vale", id_vm).execute()
+                            st.success(
+                                f"¡Se confirmó la recepción física de {cant_mut} vale(s)!"
+                            )
+                            st.rerun()
                 else:
                     st.info(
-                        f"No hay vales con el estado '{filtro_estado_mutual}' para esta sucursal."
+                        "No hay vales pendientes ni en tránsito para esta sucursal."
                     )
 
             except Exception as e:
-                st.error(f"Error al consultar los vales en el panel de mutuales: {e}")
+                st.error(f"Error al consultar vales: {e}")
+
+        # --- PESTAÑA 3: VALES RECIBIDOS (Con opción de revertir) ---
+        with tab_vales_recibidos_mut:
+            st.subheader(
+                f"✅ Vales Ya Recibidos por la Mutual — Sucursal: {sucursal_seleccionada}"
+            )
+
+            try:
+                res_recibidos = (
+                    supabase.table("vales")
+                    .select("*")
+                    .eq("sucursal", sucursal_seleccionada)
+                    .eq("estado", "Recibido por Mutual")
+                    .execute()
+                )
+
+                if res_recibidos.data:
+                    df_recibidos = pd.DataFrame(res_recibidos.data)
+                    df_recibidos["Seleccionar"] = False
+
+                    st.info(
+                        f"Hay {len(df_recibidos)} vales con recepción confirmada por la mutual."
+                    )
+
+                    df_edit_recibidos = st.data_editor(
+                        df_recibidos[
+                            [
+                                "Seleccionar",
+                                "fecha_origen",
+                                "obra_social",
+                                "plan",
+                                "n_ticket",
+                                "tt_tramitacion",
+                                "fecha_resolucion",
+                                "id_vale",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Seleccionar": st.column_config.CheckboxColumn(
+                                "☑️", default=False
+                            ),
+                            "fecha_origen": "Fecha Origen",
+                            "obra_social": "Obra Social",
+                            "plan": "Plan",
+                            "n_ticket": "Nº Ticket",
+                            "tt_tramitacion": "T.T.",
+                            "fecha_resolucion": "Fecha Envío",
+                            "id_vale": None,
+                        },
+                        key="editor_vales_mutual_recibidos",
+                    )
+
+                    vales_sel_rec = df_edit_recibidos[
+                        df_edit_recibidos["Seleccionar"] == True
+                    ]
+
+                    if not vales_sel_rec.empty:
+                        ids_rec_procesar = vales_sel_rec["id_vale"].tolist()
+                        cant_rec = len(ids_rec_procesar)
+
+                        st.markdown("---")
+                        if st.button(
+                            f"🔄 Revertir ({cant_rec}) Vales a estado 'Enviado'",
+                            type="secondary",
+                        ):
+                            for id_vm in ids_rec_procesar:
+                                supabase.table("vales").update(
+                                    {"estado": "Enviado"}
+                                ).eq("id_vale", id_vm).execute()
+                            st.warning(
+                                f"Se revirtieron {cant_rec} vale(s) al estado Enviado."
+                            )
+                            st.rerun()
+                else:
+                    st.info(
+                        "No hay vales registrados como recibidos para esta sucursal todavía."
+                    )
+
+            except Exception as e:
+                st.error(f"Error al consultar vales recibidos: {e}")
     else:
         st.warning(
             "El usuario actual no tiene un rol válido asignado en la base de datos."
