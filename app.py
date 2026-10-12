@@ -873,8 +873,9 @@ else:
 
                 if res_suc.data and len(res_suc.data) > 0:
                     for lote_h in res_suc.data:
+                        estado_actual_lote = lote_h.get("estado", "Cerrado")
                         with st.expander(
-                            f"📦 Sucursal: {lote_h.get('sucursal')} — Fecha: {lote_h.get('fecha_carga')} — Ref: {lote_h.get('observacion')}"
+                            f"📦 Fecha: {lote_h.get('fecha_carga')} — Estado: [{estado_actual_lote}] — Ref: {lote_h.get('observacion')}"
                         ):
                             col_info, col_btn = st.columns([3, 1])
                             with col_info:
@@ -882,12 +883,16 @@ else:
                                     f"**Identificador:** `{lote_h.get('id_lote')}`"
                                 )
                                 st.write(f"**Sucursal:** {lote_h.get('sucursal')}")
-                                st.write(
-                                    f"**Fecha de carga / recetas:** {lote_h.get('fecha_carga')}"
-                                )
-                                st.write(
-                                    f"**Observaciones:** {lote_h.get('observacion')}"
-                                )
+                                st.write(f"**Estado actual:** {estado_actual_lote}")
+
+                                if estado_actual_lote == "Recibido por Mutual":
+                                    st.success(
+                                        "✅ La Mutual ya confirmó la recepción física de este lote."
+                                    )
+                                else:
+                                    st.info(
+                                        "⏳ Aguardando recepción por parte de la Mutual."
+                                    )
                             with col_btn:
                                 st.write("")
                                 if st.button(
