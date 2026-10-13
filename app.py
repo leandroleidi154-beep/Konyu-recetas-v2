@@ -446,7 +446,7 @@ else:
                         lote_info.get("resumen_os", pd.DataFrame()),
                         lote_info.get("df_vales", pd.DataFrame()),
                     )
-
+                    
                     st.download_button(
                         label="📥 Descargar Resumen en PDF",
                         data=pdf_bytes,
@@ -454,6 +454,12 @@ else:
                         mime="application/pdf",
                         type="primary",
                     )
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+    
+                    if st.button("➕ Cargar Nuevo Lote", use_container_width=True):
+                        del st.session_state["lote_generado_exito"]
+                        st.rerun()
 
                 with col_konyu_lote:
                     try:
