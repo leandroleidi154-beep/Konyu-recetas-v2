@@ -6,7 +6,9 @@ from fpdf import FPDF
 
 # 1. Configuración de la página
 st.set_page_config(
-    page_title="Gestión de Recetas - Konyu", page_icon="💊", layout="wide"
+    page_title="Gestión de Recetas - Konyu", 
+    page_icon="assets/konyu_sidebar.png", # <--- Acá le pasamos la ruta de la foto
+    layout="wide"
 )
 
 
