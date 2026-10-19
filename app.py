@@ -716,7 +716,6 @@ else:
 
                         obras_sociales = df_activo["Obra Social"].unique()
 
-                        # Inicializar el conjunto de recetas físicas verificadas si no existe
                         if "recetas_verificadas" not in st.session_state:
                             st.session_state["recetas_verificadas"] = set()
 
@@ -726,15 +725,9 @@ else:
                             ].copy()
                             total_csv = len(df_os)
 
-                            # Vales de esta obra social específica
                             vales_os = len(df_os[df_os["Es Vale"] == True])
-                            a_enviar_teorico = (
-                                total_csv - vales_marcados_gral
-                                if "vales_marcados_gral" in locals()
-                                else (total_csv - len(df_os[df_os["Es Vale"] == True]))
-                            )
+                            total_a_enviar_os = total_csv - vales_os
 
-                            # IDs de esta obra social
                             ids_os = set(df_os["ID_Fila"])
                             verificadas_os = len(
                                 ids_os.intersection(
@@ -759,22 +752,22 @@ else:
                                 c_os.markdown(f"**{os_nombre}**")
                                 c_tot.markdown(f"Total: **{total_csv}**")
                                 c_val.markdown(f"Vales: **{vales_os}**")
-                                c_env.markdown(f"A enviar: **{total_csv - vales_os}**")
+                                c_env.markdown(f"A enviar: **{total_a_enviar_os}**")
 
                                 c_fis_label.markdown("Enviadas físicamente:")
                                 c_fis_val.markdown(
-                                    f"**{verificadas_os} / {total_csv - vales_os}**"
+                                    f"**{verificadas_os} / {total_a_enviar_os}**"
                                 )
 
                                 if (
-                                    verificadas_os == (total_csv - vales_os)
-                                    and (total_csv - vales_os) >= 0
+                                    verificadas_os == total_a_enviar_os
+                                    and total_a_enviar_os >= 0
                                 ):
                                     c_est.success("✅")
                                 else:
                                     c_est.warning("⏳")
 
-                                # --- DESPLEGABLE EXCLUSIVO PARA FÍSICAS (Ordenado como el CSV madre) ---
+                                # --- DESPLEGABLE EXCLUSIVO PARA FÍSICAS ---
                                 with st.expander(
                                     f"🔍 Desplegar listado de recetas de {os_nombre} ({total_csv} ítems)"
                                 ):
@@ -789,13 +782,16 @@ else:
                                             st.session_state[
                                                 "recetas_verificadas"
                                             ].update(ids_os)
-                                        elif not chk_all and verificadas_os == len(
-                                            ids_os
+                                            st.rerun()
+                                        elif (
+                                            not chk_all
+                                            and verificadas_os == len(ids_os)
+                                            and len(ids_os) > 0
                                         ):
-                                            # Si desmarca, limpia las de esta obra social
                                             st.session_state[
                                                 "recetas_verificadas"
                                             ].difference_update(ids_os)
+                                            st.rerun()
 
                                     with col_info_teclado:
                                         st.caption(
@@ -807,14 +803,15 @@ else:
                                         "ID_Fila"
                                     ].isin(st.session_state["recetas_verificadas"])
 
+                                    # ORDENAMOS LAS COLUMNAS PARA QUE "Físico OK" QUEDE A LA DERECHA
                                     edited_df_os = st.data_editor(
                                         df_os_editor[
                                             [
-                                                "Físico OK",
                                                 "ID_Fila",
                                                 "Plan",
                                                 "Nro Ticket",
                                                 "T.T",
+                                                "Físico OK",
                                             ]
                                         ],
                                         use_container_width=True,
@@ -822,7 +819,7 @@ else:
                                         column_config={
                                             "ID_Fila": None,
                                             "Físico OK": st.column_config.CheckboxColumn(
-                                                "Receta Presente 📄",
+                                                "Receta Presente 📄 (Tildar)",
                                                 help="Tildá si tenés el papel en la mano.",
                                                 default=False,
                                             ),
@@ -830,19 +827,35 @@ else:
                                         key=f"editor_fisico_os_{os_nombre}",
                                     )
 
-                                    # Sincronizar tildes físicas
+                                    # Sincronizar tildes físicas y forzar actualización visual inmediata
+                                    cambios_detectados = False
                                     for _, row_e in edited_df_os.iterrows():
                                         id_f = row_e["ID_Fila"]
                                         verif = row_e["Físico OK"]
 
-                                        if verif:
+                                        if (
+                                            verif
+                                            and id_f
+                                            not in st.session_state[
+                                                "recetas_verificadas"
+                                            ]
+                                        ):
                                             st.session_state["recetas_verificadas"].add(
                                                 id_f
                                             )
-                                        else:
+                                            cambios_detectados = True
+                                        elif (
+                                            not verif
+                                            and id_f
+                                            in st.session_state["recetas_verificadas"]
+                                        ):
                                             st.session_state[
                                                 "recetas_verificadas"
                                             ].discard(id_f)
+                                            cambios_detectados = True
+
+                                    if cambios_detectados:
+                                        st.rerun()
 
                                 st.markdown("---")
 
