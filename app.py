@@ -966,7 +966,7 @@ else:
                         st.markdown("---")
 
 
-                       referencia_usuario = st.text_input(
+                        referencia_usuario = st.text_input(
                             "📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)"
                         )
 
