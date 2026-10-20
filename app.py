@@ -966,7 +966,7 @@ else:
                         st.markdown("---")
 
 
-                        referencia_usuario = st.text_input(
+                       referencia_usuario = st.text_input(
                             "📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)"
                         )
 
@@ -975,12 +975,30 @@ else:
                         )
                         btn_label = "🔒 Cerrar y Generar Lote para Mutuales"
 
-                        if st.button(btn_label, type="primary"):
-                            try:
-                                total_vales_lote = len(
-                                    df_activo[df_activo["Es Vale"] == True]
-                                )
+                        # --- CÁLCULO PREVIO PARA VALIDACIÓN DE AUDITORÍA ---
+                        total_vales_lote_check = len(
+                            df_activo[df_activo["Es Vale"] == True]
+                        )
+                        
+                        total_auditables_check = 0
+                        for os_n in df_activo["Obra Social"].unique():
+                            df_sub = df_activo[df_activo["Obra Social"] == os_n]
+                            v_m = len(df_sub[df_sub["Es Vale"] == True])
+                            total_auditables_check += (len(df_sub) - v_m)
 
+                        recetas_marcadas_actuales = len(st.session_state.get("recetas_verificadas", set()))
+                        faltan_verificar = total_auditables_check - recetas_marcadas_actuales
+
+                        if faltan_verificar > 0:
+                            st.warning(
+                                f"⚠️ **Atención:** Todavía te faltan **{faltan_verificar}** receta(s) física(s) por tildar o auditar. "
+                                f"Revisá los desplegables de las Obras Sociales para completar el 100% antes de cerrar el lote."
+                            )
+
+                        # El botón estará deshabilitado visualmente si faltan recetas por tildar
+                        if st.button(btn_label, type="primary", disabled=(faltan_verificar > 0)):
+                            try:
+                                total_vales_lote = total_vales_lote_check
                                 filas_os_pdf = []
                                 total_envio_lote = 0
 
@@ -1080,7 +1098,6 @@ else:
 
                     except Exception as e:
                         st.error(f"Error al procesar el archivo CSV: {e}")
-
         # Pestaña de Historial con opción de Reimprimir PDF (Panel de Sucursal)
         with tab_historial:
             st.subheader("📜 Lotes Registrados y Reimpresión de Comprobantes")
