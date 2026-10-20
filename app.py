@@ -6,9 +6,7 @@ from fpdf import FPDF
 
 # 1. Configuración de la página
 st.set_page_config(
-    page_title="Gestión de Recetas - Konyu", 
-    page_icon="assets/konyu_sidebar.png", # <--- Acá le pasamos la ruta de la foto
-    layout="wide"
+    page_title="Gestión de Recetas - Konyu", page_icon="💊", layout="wide"
 )
 
 
@@ -446,7 +444,7 @@ else:
                         lote_info.get("resumen_os", pd.DataFrame()),
                         lote_info.get("df_vales", pd.DataFrame()),
                     )
-                    
+
                     st.download_button(
                         label="📥 Descargar Resumen en PDF",
                         data=pdf_bytes,
@@ -454,12 +452,6 @@ else:
                         mime="application/pdf",
                         type="primary",
                     )
-
-                    st.markdown("<br>", unsafe_allow_html=True)
-    
-                    if st.button("➕ Cargar Nuevo Lote", use_container_width=True):
-                        del st.session_state["lote_generado_exito"]
-                        st.rerun()
 
                 with col_konyu_lote:
                     try:
@@ -717,58 +709,179 @@ else:
                                                 f"fisico_{os_afectada}"
                                             ] = nuevo_a_enviar
 
-                        st.subheader("📊 Control por Obra Social")
+                        st.subheader("📊 Control por Obra Social y Conteo Físico")
+                        st.caption(
+                            "Podés tildar 'Seleccionar todo' en la fila de la Obra Social o desplegar para tildar receta por receta con el teclado (Espacio/Enter)."
+                        )
 
                         obras_sociales = df_activo["Obra Social"].unique()
 
+                        if "recetas_verificadas" not in st.session_state:
+                            st.session_state["recetas_verificadas"] = set()
+
                         for os_nombre in obras_sociales:
-                            df_os = df_activo[df_activo["Obra Social"] == os_nombre]
-                            total_csv = len(df_os)
-                            vales_marcados = len(df_os[df_os["Es Vale"] == True])
-                            a_enviar = total_csv - vales_marcados
+                            df_os_todas = df_activo[
+                                df_activo["Obra Social"] == os_nombre
+                            ].copy()
+                            total_csv = len(df_os_todas)
+
+                            # Recetas que NO son vales (las que realmente deben ir físicamente)
+                            df_os_fisicas = df_os_todas[
+                                df_os_todas["Es Vale"] == False
+                            ].copy()
+                            vales_os = total_csv - len(df_os_fisicas)
+                            total_a_enviar_os = len(df_os_fisicas)
+
+                            ids_fisicas_os = set(df_os_fisicas["ID_Fila"])
+
+                            # Verificadas reales sobre las que NO son vales
+                            verificadas_os = len(
+                                ids_fisicas_os.intersection(
+                                    st.session_state["recetas_verificadas"]
+                                )
+                            )
 
                             key_fisico = f"fisico_{os_nombre}"
-                            if key_fisico not in st.session_state:
-                                st.session_state[key_fisico] = a_enviar
+                            st.session_state[key_fisico] = verificadas_os
 
                             with st.container():
                                 (
+                                    c_chk_fast,
                                     c_os,
                                     c_tot,
                                     c_val,
                                     c_env,
                                     c_fis_label,
-                                    c_fis_input,
+                                    c_fis_val,
                                     c_est,
-                                ) = st.columns([2.2, 0.9, 0.9, 1, 1.2, 1.2, 0.6])
+                                ) = st.columns([0.4, 2.0, 0.8, 0.8, 0.8, 1.2, 0.7, 0.5])
+
+                                # Tilde rápido en la fila principal
+                                todaseleccionadas = (
+                                    verificadas_os == total_a_enviar_os
+                                    and total_a_enviar_os > 0
+                                )
+                                chk_rapido = c_chk_fast.checkbox(
+                                    "",
+                                    value=todaseleccionadas,
+                                    key=f"chk_main_{os_nombre}",
+                                    help="Tildá acá para marcar TODAS las físicas de esta Obra Social automáticamente.",
+                                )
+
+                                if chk_rapido and not todaseleccionadas:
+                                    st.session_state["recetas_verificadas"].update(
+                                        ids_fisicas_os
+                                    )
+                                    st.rerun()
+                                elif not chk_rapido and todaseleccionadas:
+                                    st.session_state[
+                                        "recetas_verificadas"
+                                    ].difference_update(ids_fisicas_os)
+                                    st.rerun()
 
                                 c_os.markdown(f"**{os_nombre}**")
                                 c_tot.markdown(f"Total: **{total_csv}**")
-                                c_val.markdown(f"Vales: **{vales_marcados}**")
-                                c_env.markdown(f"A enviar: **{a_enviar}**")
+                                c_val.markdown(f"Vales: **{vales_os}**")
+                                c_env.markdown(f"A enviar: **{total_a_enviar_os}**")
 
                                 c_fis_label.markdown("Enviadas físicamente:")
-
-                                conteo_fisico = c_fis_input.number_input(
-                                    "Físico",
-                                    min_value=0,
-                                    max_value=total_csv,
-                                    key=key_fisico,
-                                    label_visibility="collapsed",
+                                c_fis_val.markdown(
+                                    f"**{verificadas_os} / {total_a_enviar_os}**"
                                 )
 
-                                if conteo_fisico != a_enviar:
-                                    c_est.warning("⚠️")
-                                else:
+                                if (
+                                    verificadas_os == total_a_enviar_os
+                                    and total_a_enviar_os >= 0
+                                ):
                                     c_est.success("✅")
+                                else:
+                                    c_est.warning("⏳")
+
+                                # --- DESPLEGABLE CON SOLO RECETAS A ENVIAR (EXCLUYE VALES) ---
+                                with st.expander(
+                                    f"🔍 Auditables: {total_a_enviar_os} receta(s) física(s) de {os_nombre}"
+                                ):
+                                    if total_a_enviar_os > 0:
+                                        st.caption(
+                                            "💡 *Tip: Navegá con flechas ↓ y tildá rápido con 'Espacio' o 'Enter'.*"
+                                        )
+
+                                        df_os_editor = df_os_fisicas.copy()
+                                        df_os_editor["Físico OK"] = df_os_editor[
+                                            "ID_Fila"
+                                        ].isin(st.session_state["recetas_verificadas"])
+
+                                        edited_df_os = st.data_editor(
+                                            df_os_editor[
+                                                [
+                                                    "ID_Fila",
+                                                    "Plan",
+                                                    "Nro Ticket",
+                                                    "T.T",
+                                                    "Físico OK",
+                                                ]
+                                            ],
+                                            use_container_width=True,
+                                            hide_index=True,
+                                            column_config={
+                                                "ID_Fila": None,
+                                                "Físico OK": st.column_config.CheckboxColumn(
+                                                    "Receta Presente 📄",
+                                                    help="Tildá si tenés el papel físico.",
+                                                    default=False,
+                                                ),
+                                            },
+                                            key=f"editor_fisico_os_{os_nombre}",
+                                        )
+
+                                        # Sincronización
+                                        cambios_detectados = False
+                                        for _, row_e in edited_df_os.iterrows():
+                                            id_f = row_e["ID_Fila"]
+                                            verif = row_e["Físico OK"]
+
+                                            if (
+                                                verif
+                                                and id_f
+                                                not in st.session_state[
+                                                    "recetas_verificadas"
+                                                ]
+                                            ):
+                                                st.session_state[
+                                                    "recetas_verificadas"
+                                                ].add(id_f)
+                                                cambios_detectados = True
+                                            elif (
+                                                not verif
+                                                and id_f
+                                                in st.session_state[
+                                                    "recetas_verificadas"
+                                                ]
+                                            ):
+                                                st.session_state[
+                                                    "recetas_verificadas"
+                                                ].discard(id_f)
+                                                cambios_detectados = True
+
+                                        if cambios_detectados:
+                                            st.rerun()
+                                    else:
+                                        st.info(
+                                            "Todas las recetas de esta Obra Social están marcadas como Vale o no hay ítems."
+                                        )
 
                                 st.markdown("---")
 
-                        st.subheader("🔍 Detalle de Recetas y Marcado de Vales")
+                        # --- TABLA APARTE PARA MARCADO DE VALES ---
+                        st.subheader("🔍 Detalle General y Marcado de Vales (Aparte)")
+                        st.caption(
+                            "Utilizá esta sección exclusivamente si necesitás retener recetas como vales por falta de medicación."
+                        )
 
                         busqueda = st.text_input(
                             "🔎 Buscar por Nro de Ticket o T.T.",
                             placeholder="Ej: 0990-00043135 o 9909-00558021",
+                            key="busqueda_vales_general",  # <--- CLAVE ÚNICA AGREGADA AQUÍ
                         )
 
                         df_filtrado = df_activo.copy()
@@ -783,10 +896,47 @@ else:
                             ]
 
                         st.session_state["df_filtrado_temp"] = df_filtrado
-
                         st.info(
                             f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros."
                         )
+
+                        def actualizar_vales():
+                            if (
+                                "editor_vales" in st.session_state
+                                and "edited_rows" in st.session_state["editor_vales"]
+                            ):
+                                cambios = st.session_state["editor_vales"][
+                                    "edited_rows"
+                                ]
+                                for idx_fila_vis, datos_edit in cambios.items():
+                                    if "Es Vale" in datos_edit:
+                                        if (
+                                            "df_filtrado_temp" in st.session_state
+                                            and idx_fila_vis
+                                            < len(st.session_state["df_filtrado_temp"])
+                                        ):
+                                            id_real = st.session_state[
+                                                "df_filtrado_temp"
+                                            ].iloc[idx_fila_vis]["ID_Fila"]
+                                            nuevo_estado = datos_edit["Es Vale"]
+                                            st.session_state["df_lote_activo"].loc[
+                                                st.session_state["df_lote_activo"][
+                                                    "ID_Fila"
+                                                ]
+                                                == id_real,
+                                                "Es Vale",
+                                            ] = nuevo_estado
+                                            # Si pasa a ser Vale, le quitamos el tilde físico si lo tenía
+                                            if (
+                                                nuevo_estado
+                                                and id_real
+                                                in st.session_state.get(
+                                                    "recetas_verificadas", set()
+                                                )
+                                            ):
+                                                st.session_state[
+                                                    "recetas_verificadas"
+                                                ].discard(id_real)
 
                         st.data_editor(
                             df_filtrado[
@@ -805,7 +955,7 @@ else:
                                 "ID_Fila": None,
                                 "Es Vale": st.column_config.CheckboxColumn(
                                     "Retener como Vale 🎫",
-                                    help="Tildá esta casilla si la receta queda retenida en la sucursal por falta de medicación.",
+                                    help="Tildá esta casilla si la receta queda retenida en la sucursal.",
                                     default=False,
                                 ),
                             },
@@ -814,6 +964,7 @@ else:
                         )
 
                         st.markdown("---")
+
 
                         referencia_usuario = st.text_input(
                             "📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)"
@@ -824,12 +975,30 @@ else:
                         )
                         btn_label = "🔒 Cerrar y Generar Lote para Mutuales"
 
-                        if st.button(btn_label, type="primary"):
-                            try:
-                                total_vales_lote = len(
-                                    df_activo[df_activo["Es Vale"] == True]
-                                )
+                        # --- CÁLCULO PREVIO PARA VALIDACIÓN DE AUDITORÍA ---
+                        total_vales_lote_check = len(
+                            df_activo[df_activo["Es Vale"] == True]
+                        )
+                        
+                        total_auditables_check = 0
+                        for os_n in df_activo["Obra Social"].unique():
+                            df_sub = df_activo[df_activo["Obra Social"] == os_n]
+                            v_m = len(df_sub[df_sub["Es Vale"] == True])
+                            total_auditables_check += (len(df_sub) - v_m)
 
+                        recetas_marcadas_actuales = len(st.session_state.get("recetas_verificadas", set()))
+                        faltan_verificar = total_auditables_check - recetas_marcadas_actuales
+
+                        if faltan_verificar > 0:
+                            st.warning(
+                                f"⚠️ **Atención:** Todavía te faltan **{faltan_verificar}** receta(s) física(s) por tildar o auditar. "
+                                f"Revisá los desplegables de las Obras Sociales para completar el 100% antes de cerrar el lote."
+                            )
+
+                        # El botón estará deshabilitado visualmente si faltan recetas por tildar
+                        if st.button(btn_label, type="primary", disabled=(faltan_verificar > 0)):
+                            try:
+                                total_vales_lote = total_vales_lote_check
                                 filas_os_pdf = []
                                 total_envio_lote = 0
 
@@ -929,7 +1098,6 @@ else:
 
                     except Exception as e:
                         st.error(f"Error al procesar el archivo CSV: {e}")
-
         # Pestaña de Historial con opción de Reimprimir PDF (Panel de Sucursal)
         with tab_historial:
             st.subheader("📜 Lotes Registrados y Reimpresión de Comprobantes")
