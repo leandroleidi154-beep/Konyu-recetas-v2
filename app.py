@@ -719,6 +719,14 @@ else:
                         if "recetas_verificadas" not in st.session_state:
                             st.session_state["recetas_verificadas"] = set()
 
+                        # --- FUNCIÓN CALLBACK PARA EL BOTÓN MAESTRO ---
+                        def toggle_todos_os(os_nombre_cb, ids_os_cb):
+                            key_chk = f"chk_main_{os_nombre_cb}"
+                            if st.session_state.get(key_chk, False):
+                                st.session_state["recetas_verificadas"].update(ids_os_cb)
+                            else:
+                                st.session_state["recetas_verificadas"].difference_update(ids_os_cb)
+
                         for os_nombre in obras_sociales:
                             df_os_todas = df_activo[
                                 df_activo["Obra Social"] == os_nombre
@@ -766,18 +774,10 @@ else:
                                     value=todaseleccionadas,
                                     key=f"chk_main_{os_nombre}",
                                     help="Tildá acá para marcar TODAS las físicas de esta Obra Social automáticamente.",
+                                    on_change=toggle_todos_os,
+                                    args=(os_nombre, ids_fisicas_os)
                                 )
 
-                                if chk_rapido and not todaseleccionadas:
-                                    st.session_state["recetas_verificadas"].update(
-                                        ids_fisicas_os
-                                    )
-                                    st.rerun()
-                                elif not chk_rapido and todaseleccionadas:
-                                    st.session_state[
-                                        "recetas_verificadas"
-                                    ].difference_update(ids_fisicas_os)
-                                    st.rerun()
 
                                 c_os.markdown(f"**{os_nombre}**")
                                 c_tot.markdown(f"Total: **{total_csv}**")
