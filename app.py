@@ -749,8 +749,19 @@ else:
                                             "df_filtrado_temp"
                                         ].iloc[idx_fila_vis]["ID_Fila"]
                                         nuevo_estado = datos_edit["Es Vale"]
+                                        
+                                        # Actualizamos en el DataFrame principal de la sesión
                                         st.session_state["df_lote_activo"].loc[
                                             st.session_state["df_lote_activo"][
+                                                "ID_Fila"
+                                            ]
+                                            == id_real,
+                                            "Es Vale",
+                                        ] = nuevo_estado
+
+                                        # Actualizamos también en el DataFrame temporal si existe
+                                        st.session_state["df_filtrado_temp"].loc[
+                                            st.session_state["df_filtrado_temp"][
                                                 "ID_Fila"
                                             ]
                                             == id_real,
