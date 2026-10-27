@@ -21,6 +21,28 @@ def init_connection() -> Client:
 
 supabase = init_connection()
 
+
+# --- FUNCIÓN DE AUTO-GUARDADO SILENCIOSO EN SEGUNDO PLANO ---
+def auto_guardar_borrador(sucursal, fecha_db):
+    try:
+        if "df_lote_activo" in st.session_state and not st.session_state["df_lote_activo"].empty:
+            id_borrador = f"LOTE-{sucursal}-{fecha_db}"
+            estado_data = {
+                "verificadas": list(st.session_state.get("recetas_verificadas", set())),
+                "df_lote": st.session_state["df_lote_activo"].to_dict(orient="records")
+            }
+            data_borrador = {
+                "id_lote": id_borrador,
+                "sucursal": sucursal,
+                "fecha_carga": fecha_db,
+                "estado": "Borrador",
+                "observacion": json.dumps(estado_data)
+            }
+            supabase.table("lotes").upsert(data_borrador).execute()
+    except Exception as e:
+        pass
+
+
 # 3. Inicialización del estado de sesión
 if "usuario_logueado" not in st.session_state:
     st.session_state["usuario_logueado"] = None
@@ -524,6 +546,7 @@ else:
                         .select("*")
                         .eq("sucursal", sucursal_actual)
                         .eq("fecha_carga", fecha_str_db)
+                        .neq("estado", "Borrador")  # <-- Ignora borradores para la alerta de cerrado
                         .execute()
                     )
 
@@ -683,26 +706,6 @@ else:
                             f"¡Reporte cargado correctamente para el día {fecha_str_fmt}! Total de recetas detectadas: {len(df_activo)}"
                         )
 
-                        # --- BOTÓN PARA GUARDAR BORRADOR MANUALMENTE ---
-                        if st.button("💾 Guardar Progreso (Borrador) en la Nube"):
-                            try:
-                                id_borrador = f"LOTE-{sucursal_actual}-{fecha_recetas.strftime('%Y%m%d')}"
-                                estado_data = {
-                                    "verificadas": list(st.session_state.get("recetas_verificadas", set())),
-                                    "df_lote": st.session_state["df_lote_activo"].to_dict(orient="records")
-                                }
-                                data_borrador = {
-                                    "id_lote": id_borrador,
-                                    "sucursal": sucursal_actual,
-                                    "fecha_carga": fecha_str_db,
-                                    "estado": "Borrador",
-                                    "observacion": json.dumps(estado_data)
-                                }
-                                supabase.table("lotes").upsert(data_borrador).execute()
-                                st.success("¡Borrador guardado en la nube con éxito! Ya podés cerrar la página sin perder tu avance.")
-                            except Exception as e:
-                                st.error(f"Error al guardar el borrador: {e}")
-
                         st.markdown("---")
 
                         def actualizar_vales():
@@ -759,6 +762,9 @@ else:
                                             st.session_state[
                                                 f"fisico_{os_afectada}"
                                             ] = nuevo_a_enviar
+                            
+                            # Auto-guardado automático al cambiar vales
+                            auto_guardar_borrador(sucursal_actual, fecha_str_db)
 
                         st.subheader("📊 Control por Obra Social y Conteo Físico")
                         st.caption(
@@ -776,6 +782,9 @@ else:
                                 st.session_state["recetas_verificadas"].update(ids_os_cb)
                             else:
                                 st.session_state["recetas_verificadas"].difference_update(ids_os_cb)
+                            
+                            # Auto-guardado automático al marcar todos de una OS
+                            auto_guardar_borrador(sucursal_actual, fecha_str_db)
 
                         for os_nombre in obras_sociales:
                             df_os_todas = df_activo[
@@ -908,6 +917,8 @@ else:
                                                 cambios_detectados = True
 
                                         if cambios_detectados:
+                                            # Auto-guardado automático al tildar una receta individual
+                                            auto_guardar_borrador(sucursal_actual, fecha_str_db)
                                             st.rerun()
                                     else:
                                         st.info(
@@ -942,43 +953,6 @@ else:
                         st.info(
                             f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros."
                         )
-
-                        def actualizar_vales():
-                            if (
-                                "editor_vales" in st.session_state
-                                and "edited_rows" in st.session_state["editor_vales"]
-                            ):
-                                cambios = st.session_state["editor_vales"][
-                                    "edited_rows"
-                                ]
-                                for idx_fila_vis, datos_edit in cambios.items():
-                                    if "Es Vale" in datos_edit:
-                                        if (
-                                            "df_filtrado_temp" in st.session_state
-                                            and idx_fila_vis
-                                            < len(st.session_state["df_filtrado_temp"])
-                                        ):
-                                            id_real = st.session_state[
-                                                "df_filtrado_temp"
-                                            ].iloc[idx_fila_vis]["ID_Fila"]
-                                            nuevo_estado = datos_edit["Es Vale"]
-                                            st.session_state["df_lote_activo"].loc[
-                                                st.session_state["df_lote_activo"][
-                                                    "ID_Fila"
-                                                ]
-                                                == id_real,
-                                                "Es Vale",
-                                            ] = nuevo_estado
-                                            if (
-                                                nuevo_estado
-                                                and id_real
-                                                in st.session_state.get(
-                                                    "recetas_verificadas", set()
-                                                )
-                                            ):
-                                                st.session_state[
-                                                    "recetas_verificadas"
-                                                ].discard(id_real)
 
                         st.data_editor(
                             df_filtrado[
