@@ -521,46 +521,50 @@ else:
                             "⚠️ **¡Atención!** Encontramos un borrador guardado sin finalizar para esta fecha y sucursal."
                         )
 
-                        if st.button(
-                            "🔄 Retomar Borrador Anterior (Restaurar Tildes y CSV)",
-                            type="primary",
-                        ):
-                            contenido_json = json.loads(borrador["observacion"])
-                            
-                            # 1. Reconstruimos el DataFrame completo desde el JSON guardado en Supabase
-                            st.session_state["df_lote_activo"] = pd.DataFrame(contenido_json["df_lote"])
-                            
-                            # 2. Restauramos los tildes que ya tenías guardados
-                            st.session_state["recetas_verificadas"] = set(
-                                contenido_json["verificadas"]
-                            )
-                            
-                            # 3. Simulamos que el archivo ya fue subido para omitir el uploader físico
-                            st.session_state["archivo_actual"] = "Borrador_Recuperado_Cloud.csv"
-                            
-                            st.success(
-                                "¡Progreso y archivo recuperados con éxito desde la nube! Continuando donde lo dejaste..."
-                            )
-                            st.rerun()
+                        col_retomar, col_descartar = st.columns(2)
+                        
+                        with col_retomar:
+                            if st.button(
+                                "🔄 Retomar Borrador Anterior (Restaurar Tildes y CSV)",
+                                type="primary",
+                            ):
+                                contenido_json = json.loads(borrador["observacion"])
+                                
+                                # 1. Reconstruimos el DataFrame completo desde el JSON guardado en Supabase
+                                st.session_state["df_lote_activo"] = pd.DataFrame(contenido_json["df_lote"])
+                                
+                                # 2. Restauramos los tildes que ya tenías guardados
+                                st.session_state["recetas_verificadas"] = set(
+                                    contenido_json["verificadas"]
+                                )
+                                
+                                # 3. Simulamos que el archivo ya fue subido para omitir el uploader físico
+                                st.session_state["archivo_actual"] = "Borrador_Recuperado_Cloud.csv"
+                                
+                                st.success(
+                                    "¡Progreso y archivo recuperados con éxito desde la nube! Continuando donde lo dejaste..."
+                                )
+                                st.rerun()
+
+                        with col_descartar:
+                            if st.button(
+                                "🗑️ Descartar Borrador y Empezar de Cero",
+                                type="secondary",
+                            ):
+                                try:
+                                    # Borramos el registro temporal del borrador de Supabase
+                                    supabase.table("lotes").delete().eq("id_lote", id_buscado).execute()
+                                    
+                                    # Limpiamos la sesión local por las dudas
+                                    st.session_state.pop("df_lote_activo", None)
+                                    st.session_state.pop("recetas_verificadas", None)
+                                    
+                                    st.success("¡Borrador descartado con éxito! Ya podés subir un CSV nuevo.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error al descartar el borrador: {e}")
                 except Exception as e:
                     pass
-
-                lote_existente = None
-                try:
-                    res_check = (
-                        supabase.table("lotes")
-                        .select("*")
-                        .eq("sucursal", sucursal_actual)
-                        .eq("fecha_carga", fecha_str_db)
-                        .neq("estado", "Borrador")  # <-- Ignora borradores para la alerta de cerrado
-                        .execute()
-                    )
-
-                    if res_check.data and len(res_check.data) > 0:
-                        lote_existente = res_check.data[0]
-                except Exception as e:
-                    pass
-
                 if lote_existente:
                     st.warning(
                         f"⚠️ **ATENCIÓN:** Ya existe un lote registrado para la sucursal **{sucursal_actual}** con la fecha **{fecha_str_fmt}**."
