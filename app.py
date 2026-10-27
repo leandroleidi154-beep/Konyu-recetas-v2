@@ -3,6 +3,7 @@ from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
+import json
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -164,9 +165,7 @@ if st.session_state["usuario_logueado"] is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         try:
-            st.image(
-                "assets/konyu_login.png", width=180
-            )  # <-- Aumentamos el tamaño a 180
+            st.image("assets/konyu_login.png", width=180)
         except Exception:
             pass
         st.title("Konyu Recetas - Sistema de Gestión de Recetas")
@@ -200,7 +199,6 @@ if st.session_state["usuario_logueado"] is None:
 else:
     user = st.session_state["usuario_logueado"]
     with st.sidebar:
-        # Foto de Konyu grande + Título en el menú lateral
         col_side_img, col_side_txt = st.columns([1, 2.5])
         with col_side_img:
             try:
@@ -215,7 +213,6 @@ else:
 
         st.markdown("---")
 
-        # Datos de usuario y rol con texto más grande y prolijo
         nom_usr = user.get("nombre", "Desconocido")
         rol_usr = str(user.get("rol", "Sin Rol")).capitalize()
 
@@ -412,7 +409,6 @@ else:
             except Exception:
                 pass
 
-        # Definimos la sucursal fija para toda la vista y evitar errores en las solapas
         sucursal_actual = user.get("nombre", "Sucursal")
 
         tab_cierre, tab_historial, tab_vales = st.tabs(
@@ -420,7 +416,6 @@ else:
         )
 
         with tab_cierre:
-            # Si ya se generó un lote con éxito
             if "lote_generado_exito" in st.session_state:
                 lote_info = st.session_state["lote_generado_exito"]
                 st.success(
@@ -486,6 +481,41 @@ else:
                 fecha_str_db = fecha_recetas.strftime("%Y-%m-%d")
                 fecha_str_fmt = fecha_recetas.strftime("%d/%m/%Y")
                 sucursal_actual = user.get("nombre", "Sucursal")
+
+                # --- VERIFICAR SI HAY UN BORRADOR PENDIENTE EN SUPABASE ---
+                id_buscado = f"LOTE-{sucursal_actual}-{fecha_recetas.strftime('%Y%m%d')}"
+                try:
+                    res_borrador = (
+                        supabase.table("lotes")
+                        .select("*")
+                        .eq("id_lote", id_buscado)
+                        .eq("estado", "Borrador")
+                        .execute()
+                    )
+
+                    if res_borrador.data and "df_lote_activo" not in st.session_state:
+                        borrador = res_borrador.data[0]
+                        st.warning(
+                            "⚠️ **¡Atención!** Encontramos un borrador guardado sin finalizar para esta fecha y sucursal."
+                        )
+
+                        if st.button(
+                            "🔄 Retomar Borrador Anterior (Restaurar Tildes y CSV)",
+                            type="primary",
+                        ):
+                            contenido_json = json.loads(borrador["observacion"])
+                            st.session_state["df_lote_activo"] = pd.DataFrame(
+                                contenido_json["df_lote"]
+                            )
+                            st.session_state["recetas_verificadas"] = set(
+                                contenido_json["verificadas"]
+                            )
+                            st.success(
+                                "¡Progreso recuperado con éxito! Continuando donde lo dejaste..."
+                            )
+                            st.rerun()
+                except Exception as e:
+                    pass
 
                 lote_existente = None
                 try:
@@ -652,6 +682,27 @@ else:
                         st.success(
                             f"¡Reporte cargado correctamente para el día {fecha_str_fmt}! Total de recetas detectadas: {len(df_activo)}"
                         )
+
+                        # --- BOTÓN PARA GUARDAR BORRADOR MANUALMENTE ---
+                        if st.button("💾 Guardar Progreso (Borrador) en la Nube"):
+                            try:
+                                id_borrador = f"LOTE-{sucursal_actual}-{fecha_recetas.strftime('%Y%m%d')}"
+                                estado_data = {
+                                    "verificadas": list(st.session_state.get("recetas_verificadas", set())),
+                                    "df_lote": st.session_state["df_lote_activo"].to_dict(orient="records")
+                                }
+                                data_borrador = {
+                                    "id_lote": id_borrador,
+                                    "sucursal": sucursal_actual,
+                                    "fecha_carga": fecha_str_db,
+                                    "estado": "Borrador",
+                                    "observacion": json.dumps(estado_data)
+                                }
+                                supabase.table("lotes").upsert(data_borrador).execute()
+                                st.success("¡Borrador guardado en la nube con éxito! Ya podés cerrar la página sin perder tu avance.")
+                            except Exception as e:
+                                st.error(f"Error al guardar el borrador: {e}")
+
                         st.markdown("---")
 
                         def actualizar_vales():
@@ -719,7 +770,6 @@ else:
                         if "recetas_verificadas" not in st.session_state:
                             st.session_state["recetas_verificadas"] = set()
 
-                        # --- FUNCIÓN CALLBACK PARA EL BOTÓN MAESTRO ---
                         def toggle_todos_os(os_nombre_cb, ids_os_cb):
                             key_chk = f"chk_main_{os_nombre_cb}"
                             if st.session_state.get(key_chk, False):
@@ -733,7 +783,6 @@ else:
                             ].copy()
                             total_csv = len(df_os_todas)
 
-                            # Recetas que NO son vales (las que realmente deben ir físicamente)
                             df_os_fisicas = df_os_todas[
                                 df_os_todas["Es Vale"] == False
                             ].copy()
@@ -742,7 +791,6 @@ else:
 
                             ids_fisicas_os = set(df_os_fisicas["ID_Fila"])
 
-                            # Verificadas reales sobre las que NO son vales
                             verificadas_os = len(
                                 ids_fisicas_os.intersection(
                                     st.session_state["recetas_verificadas"]
@@ -764,7 +812,6 @@ else:
                                     c_est,
                                 ) = st.columns([0.4, 2.0, 0.8, 0.8, 0.8, 1.2, 0.7, 0.5])
 
-                                # Tilde rápido en la fila principal
                                 todaseleccionadas = (
                                     verificadas_os == total_a_enviar_os
                                     and total_a_enviar_os > 0
@@ -777,7 +824,6 @@ else:
                                     on_change=toggle_todos_os,
                                     args=(os_nombre, ids_fisicas_os)
                                 )
-
 
                                 c_os.markdown(f"**{os_nombre}**")
                                 c_tot.markdown(f"Total: **{total_csv}**")
@@ -797,7 +843,6 @@ else:
                                 else:
                                     c_est.warning("⏳")
 
-                                # --- DESPLEGABLE CON SOLO RECETAS A ENVIAR (EXCLUYE VALES) ---
                                 with st.expander(
                                     f"🔍 Auditables: {total_a_enviar_os} receta(s) física(s) de {os_nombre}"
                                 ):
@@ -834,7 +879,6 @@ else:
                                             key=f"editor_fisico_os_{os_nombre}",
                                         )
 
-                                        # Sincronización
                                         cambios_detectados = False
                                         for _, row_e in edited_df_os.iterrows():
                                             id_f = row_e["ID_Fila"]
@@ -872,7 +916,6 @@ else:
 
                                 st.markdown("---")
 
-                        # --- TABLA APARTE PARA MARCADO DE VALES ---
                         st.subheader("🔍 Detalle General y Marcado de Vales (Aparte)")
                         st.caption(
                             "Utilizá esta sección exclusivamente si necesitás retener recetas como vales por falta de medicación."
@@ -881,7 +924,7 @@ else:
                         busqueda = st.text_input(
                             "🔎 Buscar por Nro de Ticket o T.T.",
                             placeholder="Ej: 0990-00043135 o 9909-00558021",
-                            key="busqueda_vales_general",  # <--- CLAVE ÚNICA AGREGADA AQUÍ
+                            key="busqueda_vales_general",
                         )
 
                         df_filtrado = df_activo.copy()
@@ -926,7 +969,6 @@ else:
                                                 == id_real,
                                                 "Es Vale",
                                             ] = nuevo_estado
-                                            # Si pasa a ser Vale, le quitamos el tilde físico si lo tenía
                                             if (
                                                 nuevo_estado
                                                 and id_real
@@ -965,7 +1007,6 @@ else:
 
                         st.markdown("---")
 
-
                         referencia_usuario = st.text_input(
                             "📝 Nota / Referencia Opcional para el Lote (ej: Lote Tarde - Turno 2)"
                         )
@@ -975,7 +1016,6 @@ else:
                         )
                         btn_label = "🔒 Cerrar y Generar Lote para Mutuales"
 
-                        # --- CÁLCULO PREVIO PARA VALIDACIÓN DE AUDITORÍA ---
                         total_vales_lote_check = len(
                             df_activo[df_activo["Es Vale"] == True]
                         )
@@ -995,7 +1035,6 @@ else:
                                 f"Revisá los desplegables de las Obras Sociales para completar el 100% antes de cerrar el lote."
                             )
 
-                        # El botón estará deshabilitado visualmente si faltan recetas por tildar
                         if st.button(btn_label, type="primary", disabled=(faltan_verificar > 0)):
                             try:
                                 total_vales_lote = total_vales_lote_check
@@ -1098,7 +1137,7 @@ else:
 
                     except Exception as e:
                         st.error(f"Error al procesar el archivo CSV: {e}")
-        # Pestaña de Historial con opción de Reimprimir PDF (Panel de Sucursal)
+
         with tab_historial:
             st.subheader("📜 Lotes Registrados y Reimpresión de Comprobantes")
             try:
@@ -1161,14 +1200,12 @@ else:
             except Exception as e:
                 st.error(f"Error al recuperar el historial: {e}")
 
-        # 📋 Pestaña de Registro y Gestión de Vales (Con acciones inteligentes por estado)
         with tab_vales:
             st.subheader("📋 Registro y Seguimiento de Vales Retenidos")
 
             if "vales_seleccionados_ids" not in st.session_state:
                 st.session_state["vales_seleccionados_ids"] = []
 
-            # 1. Filtros de Búsqueda
             col_f1, col_f2, col_f3, col_f4 = st.columns([1.5, 1.5, 2, 1])
 
             with col_f1:
@@ -1201,7 +1238,6 @@ else:
                 )
 
             try:
-                # 2. Consulta a Supabase
                 query_v = (
                     supabase.table("vales").select("*").eq("sucursal", sucursal_actual)
                 )
@@ -1218,7 +1254,6 @@ else:
                 if data_v:
                     df_v_db = pd.DataFrame(data_v)
 
-                    # Buscador por texto
                     if busqueda_vales:
                         df_v_db = df_v_db[
                             df_v_db["n_ticket"]
@@ -1234,12 +1269,10 @@ else:
                             f"Mostrando {len(df_v_db)} vales en pantalla. Tildá para sumar a la lista."
                         )
 
-                        # Marcar seleccionados guardados en sesión
                         df_v_db["Seleccionar"] = df_v_db["id_vale"].isin(
                             st.session_state["vales_seleccionados_ids"]
                         )
 
-                        # Tabla interactiva
                         df_editado_vales = st.data_editor(
                             df_v_db[
                                 [
@@ -1270,7 +1303,6 @@ else:
                             key="editor_acumulativo_vales",
                         )
 
-                        # Sincronizar selección con el session_state
                         for _, row in df_editado_vales.iterrows():
                             vid = row["id_vale"]
                             seleccionado = row["Seleccionar"]
@@ -1319,7 +1351,6 @@ else:
                                 cant_total_sel = len(ids_acumulados)
                                 estados_presentes = set(df_acumulado["estado"].tolist())
 
-                                # Evaluación de estados
                                 solo_pendientes = estados_presentes == {"Pendiente"}
                                 solo_enviados = estados_presentes == {"Enviado"}
                                 solo_cancelados = estados_presentes == {"Cancelado"}
@@ -1453,7 +1484,6 @@ else:
             except Exception:
                 pass
 
-        # Obtenemos la lista de sucursales disponibles desde la base de datos de usuarios o lotes
         try:
             res_sucursales = (
                 supabase.table("usuarios")
@@ -1473,12 +1503,10 @@ else:
             "🏢 Seleccione la Sucursal a Auditar:", lista_sucursales
         )
 
-        # Pestañas principales para el sector de mutuales (Agregamos la pestaña de Vales Recibidos)
         tab_lotes_mutual, tab_vales_mutual, tab_vales_recibidos_mut = st.tabs(
             ["📦 Recepción de Lotes", "🎫 Seguimiento y Vales", "✅ Vales Recibidos"]
         )
 
-        # --- PESTAÑA 1: RECEPCIÓN DE LOTES ---
         with tab_lotes_mutual:
             st.subheader(f"📦 Lotes de Recetas de la sucursal: {sucursal_seleccionada}")
             try:
@@ -1561,14 +1589,12 @@ else:
             except Exception as e:
                 st.error(f"Error al cargar los lotes para la mutual: {e}")
 
-        # --- PESTAÑA 2: SEGUIMIENTO Y VALES EN TRÁNSITO/PENDIENTES ---
         with tab_vales_mutual:
             st.subheader(
                 f"🎫 Vales En Tránsito o Pendientes — Sucursal: {sucursal_seleccionada}"
             )
 
             try:
-                # Mostramos por defecto los vales que están Enviados o Pendientes para que la mutual los gestione
                 res_v_mut = (
                     supabase.table("vales")
                     .select("*")
@@ -1644,7 +1670,6 @@ else:
             except Exception as e:
                 st.error(f"Error al consultar vales: {e}")
 
-        # --- PESTAÑA 3: VALES RECIBIDOS (Con opción de revertir) ---
         with tab_vales_recibidos_mut:
             st.subheader(
                 f"✅ Vales Ya Recibidos por la Mutual — Sucursal: {sucursal_seleccionada}"
