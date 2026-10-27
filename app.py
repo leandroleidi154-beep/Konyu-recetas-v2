@@ -16,10 +16,6 @@ url = st.secrets["supabase"]["url"]
 key = st.secrets["supabase"]["key"]
 supabase: Client = create_client(url, key)
 
-
-supabase = init_connection()
-
-
 # --- FUNCIÓN DE AUTO-GUARDADO SILENCIOSO EN SEGUNDO PLANO ---
 def auto_guardar_borrador(sucursal, fecha_db):
   try:
