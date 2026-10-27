@@ -37,7 +37,7 @@ def auto_guardar_borrador(sucursal, fecha_db):
                 "estado": "Borrador",
                 "observacion": json.dumps(estado_data)
             }
-            supabase.table("lotes").upsert(data_borrador).execute()
+            supabase.table("lotes").upsert(data_borrador, on_conflict=["id_lote"]).execute()
     except Exception as e:
         pass
 
@@ -504,7 +504,7 @@ else:
                 fecha_str_fmt = fecha_recetas.strftime("%d/%m/%Y")
                 sucursal_actual = user.get("nombre", "Sucursal")
 
-                # --- VERIFICAR SI HAY UN BORRADOR PENDIENTE EN SUPABASE ---
+                # --- VERIFICAR SI HAY UN BORRADOR PENDIENTE EN SUPABASE (CONSULTA FRESCA SIN CACHÉ) ---
                 id_buscado = f"LOTE-{sucursal_actual}-{fecha_str_db}"
                 try:
                     res_borrador = (
@@ -512,6 +512,8 @@ else:
                         .select("*")
                         .eq("id_lote", id_buscado)
                         .eq("estado", "Borrador")
+                        .order("created_at", desc=True)
+                        .limit(1)
                         .execute()
                     )
 
@@ -529,7 +531,9 @@ else:
                                 type="primary",
                             ):
                                 contenido_json = json.loads(borrador["observacion"])
-                                st.session_state["df_lote_activo"] = pd.DataFrame(contenido_json["df_lote"])
+                                df_recuperado = pd.DataFrame(contenido_json["df_lote"])
+                                df_recuperado["Es Vale"] = df_recuperado["Es Vale"].astype(bool)
+                                st.session_state["df_lote_activo"] = df_recuperado
                                 st.session_state["recetas_verificadas"] = set(
                                     contenido_json["verificadas"]
                                 )
@@ -712,6 +716,7 @@ else:
                                         "ID_Fila",
                                         [f"REC_{i}" for i in range(len(df_base))],
                                     )
+                                    df_base["Es Vale"] = df_base["Es Vale"].astype(bool)
                                     st.session_state["df_lote_activo"] = df_base
                                 else:
                                     st.warning(
@@ -942,9 +947,9 @@ else:
                     cambios_vales_detectados = False
                     for _, row_ed in edited_df_vales.iterrows():
                         id_f = row_ed["ID_Fila"]
-                        nuevo_val_vale = row_ed["Es Vale"]
+                        nuevo_val_vale = bool(row_ed["Es Vale"])
 
-                        val_actual = (
+                        val_actual = bool(
                             st.session_state["df_lote_activo"]
                             .loc[
                                 st.session_state["df_lote_activo"]["ID_Fila"]
