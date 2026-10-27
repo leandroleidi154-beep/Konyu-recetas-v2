@@ -526,14 +526,20 @@ else:
                             type="primary",
                         ):
                             contenido_json = json.loads(borrador["observacion"])
-                            st.session_state["df_lote_activo"] = pd.DataFrame(
-                                contenido_json["df_lote"]
-                            )
+                            
+                            # 1. Reconstruimos el DataFrame completo desde el JSON guardado en Supabase
+                            st.session_state["df_lote_activo"] = pd.DataFrame(contenido_json["df_lote"])
+                            
+                            # 2. Restauramos los tildes que ya tenías guardados
                             st.session_state["recetas_verificadas"] = set(
                                 contenido_json["verificadas"]
                             )
+                            
+                            # 3. Engañamos a la app simulando que el archivo ya fue subido para que no lo pida
+                            st.session_state["archivo_actual"] = "Borrador_Recuperado_Cloud.csv"
+                            
                             st.success(
-                                "¡Progreso recuperado con éxito! Continuando donde lo dejaste..."
+                                "¡Progreso y archivo recuperados con éxito desde la nube! Continuando donde lo dejaste..."
                             )
                             st.rerun()
                 except Exception as e:
