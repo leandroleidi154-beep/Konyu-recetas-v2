@@ -12,11 +12,9 @@ st.set_page_config(
 
 
 # 2. Conexión a Supabase usando los secretos de Streamlit
-@st.cache_resource
-def init_connection() -> Client:
-  url = st.secrets["supabase"]["url"]
-  key = st.secrets["supabase"]["key"]
-  return create_client(url, key)
+url = st.secrets["supabase"]["url"]
+key = st.secrets["supabase"]["key"]
+supabase: Client = create_client(url, key)
 
 
 supabase = init_connection()
