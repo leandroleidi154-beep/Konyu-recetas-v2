@@ -730,74 +730,6 @@ else:
 
                     st.markdown("---")
 
-                    def actualizar_vales():
-                        if (
-                            "editor_vales" in st.session_state
-                            and "edited_rows" in st.session_state["editor_vales"]
-                        ):
-                            cambios = st.session_state["editor_vales"][
-                                "edited_rows"
-                            ]
-                            for idx_fila_vis, datos_edit in cambios.items():
-                                if "Es Vale" in datos_edit:
-                                    if (
-                                        "df_filtrado_temp" in st.session_state
-                                        and idx_fila_vis
-                                        < len(st.session_state["df_filtrado_temp"])
-                                    ):
-                                        id_real = st.session_state[
-                                            "df_filtrado_temp"
-                                        ].iloc[idx_fila_vis]["ID_Fila"]
-                                        nuevo_estado = datos_edit["Es Vale"]
-                                        
-                                        # Actualizamos en el DataFrame principal de la sesión
-                                        st.session_state["df_lote_activo"].loc[
-                                            st.session_state["df_lote_activo"][
-                                                "ID_Fila"
-                                            ]
-                                            == id_real,
-                                            "Es Vale",
-                                        ] = nuevo_estado
-
-                                        # Actualizamos también en el DataFrame temporal si existe
-                                        st.session_state["df_filtrado_temp"].loc[
-                                            st.session_state["df_filtrado_temp"][
-                                                "ID_Fila"
-                                            ]
-                                            == id_real,
-                                            "Es Vale",
-                                        ] = nuevo_estado
-
-                                        os_afectada = (
-                                            st.session_state["df_lote_activo"]
-                                            .loc[
-                                                st.session_state["df_lote_activo"][
-                                                    "ID_Fila"
-                                                ]
-                                                == id_real,
-                                                "Obra Social",
-                                            ]
-                                            .values[0]
-                                        )
-                                        df_os_temp = st.session_state[
-                                            "df_lote_activo"
-                                        ][
-                                            st.session_state["df_lote_activo"][
-                                                "Obra Social"
-                                            ]
-                                            == os_afectada
-                                        ]
-                                        nuevo_a_enviar = len(df_os_temp) - len(
-                                            df_os_temp[
-                                                df_os_temp["Es Vale"] == True
-                                            ]
-                                        )
-                                        st.session_state[
-                                            f"fisico_{os_afectada}"
-                                        ] = nuevo_a_enviar
-                        
-                        auto_guardar_borrador(sucursal_actual, fecha_str_db)
-
                     st.subheader("📊 Control por Obra Social y Conteo Físico")
                     st.caption(
                         "Podés tildar 'Seleccionar todo' en la fila de la Obra Social o desplegar para tildar receta por receta con el teclado (Espacio/Enter)."
@@ -979,12 +911,11 @@ else:
                             )
                         ]
 
-                    st.session_state["df_filtrado_temp"] = df_filtrado
                     st.info(
                         f"Mostrando {len(df_filtrado)} de {len(df_activo)} registros."
                     )
 
-                    st.data_editor(
+                    edited_df_vales = st.data_editor(
                         df_filtrado[
                             [
                                 "ID_Fila",
@@ -1006,8 +937,34 @@ else:
                             ),
                         },
                         key="editor_vales",
-                        on_change=actualizar_vales,
                     )
+
+                    cambios_vales_detectados = False
+                    for _, row_ed in edited_df_vales.iterrows():
+                        id_f = row_ed["ID_Fila"]
+                        nuevo_val_vale = row_ed["Es Vale"]
+
+                        val_actual = (
+                            st.session_state["df_lote_activo"]
+                            .loc[
+                                st.session_state["df_lote_activo"]["ID_Fila"]
+                                == id_f,
+                                "Es Vale",
+                            ]
+                            .values[0]
+                        )
+
+                        if val_actual != nuevo_val_vale:
+                            st.session_state["df_lote_activo"].loc[
+                                st.session_state["df_lote_activo"]["ID_Fila"]
+                                == id_f,
+                                "Es Vale",
+                            ] = nuevo_val_vale
+                            cambios_vales_detectados = True
+
+                    if cambios_vales_detectados:
+                        auto_guardar_borrador(sucursal_actual, fecha_str_db)
+                        st.rerun()
 
                     st.markdown("---")
 
