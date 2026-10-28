@@ -1046,7 +1046,7 @@ else:
                             }
 
                             res_insert = (
-                                supabase.table("lotes").upsert(data_lote).execute()
+                                supabase.table("lotes").upsert(data_lote, on_conflict=["id_lote"]).execute()
                             )
 
                             if res_insert:
