@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
 import json
+import re
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -92,11 +93,19 @@ def generar_pdf_bytes(
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
 
-    # Encabezado
+    # Encabezado limpio
+    obs_limpia = observacion
+    try:
+        if "{" in observacion and "}" in observacion:
+            j_data = json.loads(observacion)
+            obs_limpia = j_data.get("texto", observacion)
+    except Exception:
+        pass
+
     pdf.cell(190, 8, f"Resumen de Lote - Sucursal: {sucursal_nombre}", 0, 1, "C")
     pdf.set_font("Arial", "", 10)
     pdf.cell(
-        190, 6, f"Fecha del Lote: {fecha_lote} | Observación: {observacion}", 0, 1, "C"
+        190, 6, f"Fecha del Lote: {fecha_lote} | Observación: {obs_limpia}", 0, 1, "C"
     )
     pdf.ln(5)
 
@@ -179,6 +188,67 @@ def generar_pdf_bytes(
     pdf.cell(190, 10, texto_totales, 1, 1, "C", True)
 
     return pdf.output(dest="S").encode("latin1")
+
+
+def generar_pdf_desde_historial(lote_h, supabase_client):
+    obs_raw = str(lote_h.get("observacion", ""))
+    obs_text = obs_raw
+    envios_reimp = 0
+    vales_reimp = 0
+    
+    df_resumen_reimp = pd.DataFrame()
+    try:
+        if "{" in obs_raw and "}" in obs_raw:
+            data_guardada = json.loads(obs_raw)
+            obs_text = data_guardada.get("texto", obs_raw)
+            if "resumen_os" in data_guardada:
+                df_resumen_reimp = pd.DataFrame(data_guardada["resumen_os"])
+    except Exception:
+        pass
+
+    m_env = re.search(r'Enviadas:\s*(\d+)', obs_text)
+    if m_env:
+        envios_reimp = int(m_env.group(1))
+    m_val = re.search(r'Vales:\s*(\d+)', obs_text)
+    if m_val:
+        vales_reimp = int(m_val.group(1))
+
+    if df_resumen_reimp.empty:
+        res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
+        df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
+        if not df_vales_reimp.empty:
+            if "obra_social" in df_vales_reimp.columns and "Obra Social" not in df_vales_reimp.columns:
+                df_vales_reimp = df_vales_reimp.rename(columns={
+                    "obra_social": "Obra Social",
+                    "plan": "Plan",
+                    "n_ticket": "Nro Ticket",
+                    "tt_tramitacion": "T.T"
+                })
+            vales_por_os = df_vales_reimp.groupby("Obra Social").size().reset_index(name="Vales Retenidos")
+            vales_por_os["Total CSV"] = vales_por_os["Vales Retenidos"]
+            vales_por_os["Físico Enviado"] = 0
+            df_resumen_reimp = vales_por_os
+    else:
+        res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
+        df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
+        if not df_vales_reimp.empty:
+            if "obra_social" in df_vales_reimp.columns and "Obra Social" not in df_vales_reimp.columns:
+                df_vales_reimp = df_vales_reimp.rename(columns={
+                    "obra_social": "Obra Social",
+                    "plan": "Plan",
+                    "n_ticket": "Nro Ticket",
+                    "tt_tramitacion": "T.T"
+                })
+
+    return generar_pdf_bytes(
+        str(lote_h.get("sucursal")),
+        str(lote_h.get("fecha_carga")),
+        obs_text,
+        envios_reimp,
+        vales_reimp,
+        df_resumen_reimp,
+        df_vales_reimp
+    )
 
 
 # --- PANTALLA DE LOGIN ---
@@ -470,6 +540,14 @@ else:
                         type="primary",
                     )
 
+                    st.markdown("---")
+                    if st.button("➕ Cargar un Nuevo Lote / Volver al Inicio", type="secondary"):
+                        st.session_state.pop("lote_generado_exito", None)
+                        st.session_state.pop("df_lote_activo", None)
+                        st.session_state.pop("recetas_verificadas", None)
+                        st.session_state.pop("archivo_actual", None)
+                        st.rerun()
+
                 with col_konyu_lote:
                     try:
                         st.image("assets/konyu_lote.png", width=110)
@@ -577,11 +655,20 @@ else:
                     pass
 
                 if lote_existente:
+                    obs_prev_raw = lote_existente.get('observacion', '')
+                    obs_prev_limpia = obs_prev_raw
+                    try:
+                        if "{" in obs_prev_raw and "}" in obs_prev_raw:
+                            j_p = json.loads(obs_prev_raw)
+                            obs_prev_limpia = j_p.get("texto", obs_prev_raw)
+                    except Exception:
+                        pass
+
                     st.warning(
                         f"⚠️ **ATENCIÓN:** Ya existe un lote registrado para la sucursal **{sucursal_actual}** con la fecha **{fecha_str_fmt}**."
                     )
                     st.info(
-                        f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación:** {lote_existente.get('observacion')}"
+                        f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación:** {obs_prev_limpia}"
                     )
 
                     col_eliminar, col_seguir = st.columns(2)
@@ -1037,16 +1124,21 @@ else:
                             if referencia_usuario:
                                 obs_final += f" | Ref: {referencia_usuario}"
 
+                            info_completa_lote = {
+                                "texto": obs_final,
+                                "resumen_os": df_resumen_os_pdf.to_dict(orient="records")
+                            }
+
                             data_lote = {
                                 "id_lote": id_lote_final,
                                 "sucursal": sucursal_actual,
                                 "fecha_carga": fecha_str_db,
                                 "estado": "Cerrado",
-                                "observacion": obs_final,
+                                "observacion": json.dumps(info_completa_lote),
                             }
 
                             res_insert = (
-                                supabase.table("lotes").upsert(data_lote).execute()
+                                supabase.table("lotes").upsert(data_lote, on_conflict=["id_lote"]).execute()
                             )
 
                             if res_insert:
@@ -1116,8 +1208,18 @@ else:
                 if res_suc.data and len(res_suc.data) > 0:
                     for lote_h in res_suc.data:
                         estado_actual_lote = lote_h.get("estado", "Cerrado")
+                        
+                        obs_raw = lote_h.get("observacion", "")
+                        obs_texto_mostrar = obs_raw
+                        try:
+                            if "{" in obs_raw and "}" in obs_raw:
+                                j_parsed = json.loads(obs_raw)
+                                obs_texto_mostrar = j_parsed.get("texto", obs_raw)
+                        except Exception:
+                            pass
+
                         with st.expander(
-                            f"📦 Fecha: {lote_h.get('fecha_carga')} — Estado: [{estado_actual_lote}] — Ref: {lote_h.get('observacion')}"
+                            f"📦 Fecha: {lote_h.get('fecha_carga')} — Estado: [{estado_actual_lote}] — Ref: {obs_texto_mostrar}"
                         ):
                             col_info, col_btn = st.columns([3, 1])
                             with col_info:
@@ -1141,15 +1243,7 @@ else:
                                     "📥 Reimprimir PDF",
                                     key=f"reimp_suc_{lote_h.get('id_lote')}",
                                 ):
-                                    pdf_reimp_bytes = generar_pdf_bytes(
-                                        str(lote_h.get("sucursal")),
-                                        str(lote_h.get("fecha_carga")),
-                                        str(lote_h.get("observacion")),
-                                        0,
-                                        0,
-                                        pd.DataFrame(),
-                                        pd.DataFrame(),
-                                    )
+                                    pdf_reimp_bytes = generar_pdf_desde_historial(lote_h, supabase)
                                     st.download_button(
                                         label="💾 Descargar Archivo PDF",
                                         data=pdf_reimp_bytes,
@@ -1486,10 +1580,20 @@ else:
                 if res_lotes_mut.data:
                     for lote_m in res_lotes_mut.data:
                         estado_lote = lote_m.get("estado", "Cerrado")
+                        
+                        obs_raw = lote_m.get("observacion", "")
+                        obs_texto_mostrar = obs_raw
+                        try:
+                            if "{" in obs_raw and "}" in obs_raw:
+                                j_parsed = json.loads(obs_raw)
+                                obs_texto_mostrar = j_parsed.get("texto", obs_raw)
+                        except Exception:
+                            pass
+
                         with st.expander(
                             f"📁 Lote: {lote_m.get('id_lote')} — Fecha: {lote_m.get('fecha_carga')} — Estado: [{estado_lote}]"
                         ):
-                            st.write(f"**Observación:** {lote_m.get('observacion')}")
+                            st.write(f"**Observación:** {obs_texto_mostrar}")
                             st.write(
                                 f"**Fecha de creación:** {lote_m.get('created_at')}"
                             )
@@ -1531,15 +1635,7 @@ else:
                                     f"📥 Descargar Resumen PDF",
                                     key=f"pdf_mut_{lote_m.get('id_lote')}",
                                 ):
-                                    pdf_bytes_mut = generar_pdf_bytes(
-                                        str(lote_m.get("sucursal")),
-                                        str(lote_m.get("fecha_carga")),
-                                        str(lote_m.get("observacion")),
-                                        0,
-                                        0,
-                                        pd.DataFrame(),
-                                        pd.DataFrame(),
-                                    )
+                                    pdf_bytes_mut = generar_pdf_desde_historial(lote_m, supabase)
                                     st.download_button(
                                         label="💾 Guardar PDF en equipo",
                                         data=pdf_bytes_mut,
