@@ -470,6 +470,16 @@ else:
                         type="primary",
                     )
 
+                    # --- NUEVO BOTÓN PARA CARGAR OTRO LOTE SIN CERRAR SESIÓN ---
+                    st.markdown("---")
+                    if st.button("➕ Cargar un Nuevo Lote / Volver al Inicio", type="secondary"):
+                        # Borramos las variables de estado relativas al lote activo y al éxito
+                        st.session_state.pop("lote_generado_exito", None)
+                        st.session_state.pop("df_lote_activo", None)
+                        st.session_state.pop("recetas_verificadas", None)
+                        st.session_state.pop("archivo_actual", None)
+                        st.rerun()
+
                 with col_konyu_lote:
                     try:
                         st.image("assets/konyu_lote.png", width=110)
