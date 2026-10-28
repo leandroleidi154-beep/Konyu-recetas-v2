@@ -93,11 +93,19 @@ def generar_pdf_bytes(
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
 
-    # Encabezado
+    # Encabezado limpio
+    obs_limpia = observacion
+    try:
+        if "{" in observacion and "}" in observacion:
+            j_data = json.loads(observacion)
+            obs_limpia = j_data.get("texto", observacion)
+    except Exception:
+        pass
+
     pdf.cell(190, 8, f"Resumen de Lote - Sucursal: {sucursal_nombre}", 0, 1, "C")
     pdf.set_font("Arial", "", 10)
     pdf.cell(
-        190, 6, f"Fecha del Lote: {fecha_lote} | Observación: {observacion}", 0, 1, "C"
+        190, 6, f"Fecha del Lote: {fecha_lote} | Observación: {obs_limpia}", 0, 1, "C"
     )
     pdf.ln(5)
 
@@ -183,10 +191,21 @@ def generar_pdf_bytes(
 
 
 def generar_pdf_desde_historial(lote_h, supabase_client):
-    obs_text = str(lote_h.get("observacion", ""))
+    obs_raw = str(lote_h.get("observacion", ""))
+    obs_text = obs_raw
     envios_reimp = 0
     vales_reimp = 0
     
+    df_resumen_reimp = pd.DataFrame()
+    try:
+        if "{" in obs_raw and "}" in obs_raw:
+            data_guardada = json.loads(obs_raw)
+            obs_text = data_guardada.get("texto", obs_raw)
+            if "resumen_os" in data_guardada:
+                df_resumen_reimp = pd.DataFrame(data_guardada["resumen_os"])
+    except Exception:
+        pass
+
     m_env = re.search(r'Enviadas:\s*(\d+)', obs_text)
     if m_env:
         envios_reimp = int(m_env.group(1))
@@ -194,19 +213,7 @@ def generar_pdf_desde_historial(lote_h, supabase_client):
     if m_val:
         vales_reimp = int(m_val.group(1))
 
-    # Intentamos leer el JSON guardado en la observación o reconstruir desde la BD
-    df_resumen_reimp = pd.DataFrame()
-    try:
-        if "{" in obs_text and "}" in obs_text:
-            json_part = obs_text[obs_text.find("{"):obs_text.rfind("}")+1]
-            data_guardada = json.loads(json_part)
-            if "resumen_os" in data_guardada:
-                df_resumen_reimp = pd.DataFrame(data_guardada["resumen_os"])
-    except Exception:
-        pass
-
     if df_resumen_reimp.empty:
-        # Respaldo por si el lote es antiguo
         res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
         df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
         if not df_vales_reimp.empty:
@@ -648,11 +655,20 @@ else:
                     pass
 
                 if lote_existente:
+                    obs_prev_raw = lote_existente.get('observacion', '')
+                    obs_prev_limpia = obs_prev_raw
+                    try:
+                        if "{" in obs_prev_raw and "}" in obs_prev_raw:
+                            j_p = json.loads(obs_prev_raw)
+                            obs_prev_limpia = j_p.get("texto", obs_prev_raw)
+                    except Exception:
+                        pass
+
                     st.warning(
                         f"⚠️ **ATENCIÓN:** Ya existe un lote registrado para la sucursal **{sucursal_actual}** con la fecha **{fecha_str_fmt}**."
                     )
                     st.info(
-                        f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación:** {lote_existente.get('observacion')}"
+                        f"**Identificador previo:** `{lote_existente.get('id_lote')}` | **Observación:** {obs_prev_limpia}"
                     )
 
                     col_eliminar, col_seguir = st.columns(2)
@@ -1108,7 +1124,6 @@ else:
                             if referencia_usuario:
                                 obs_final += f" | Ref: {referencia_usuario}"
 
-                            # Guardamos también el resumen detallado en formato JSON dentro de la observación
                             info_completa_lote = {
                                 "texto": obs_final,
                                 "resumen_os": df_resumen_os_pdf.to_dict(orient="records")
@@ -1194,7 +1209,6 @@ else:
                     for lote_h in res_suc.data:
                         estado_actual_lote = lote_h.get("estado", "Cerrado")
                         
-                        # Extraer la observación legible
                         obs_raw = lote_h.get("observacion", "")
                         obs_texto_mostrar = obs_raw
                         try:
@@ -1461,7 +1475,7 @@ else:
                                         st.button(
                                             "🚀 Enviar elegidos",
                                             disabled=True,
-                                            help="No podés enviar registros que ya estão Enviados o Cancelados.",
+                                            help="No podés enviar registros que ya están Enviados o Cancelados.",
                                         )
 
                                 with col_acc2:
