@@ -194,23 +194,44 @@ def generar_pdf_desde_historial(lote_h, supabase_client):
     if m_val:
         vales_reimp = int(m_val.group(1))
 
-    res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
-    df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
-    if not df_vales_reimp.empty:
-        if "obra_social" in df_vales_reimp.columns and "Obra Social" not in df_vales_reimp.columns:
-            df_vales_reimp = df_vales_reimp.rename(columns={
-                "obra_social": "Obra Social",
-                "plan": "Plan",
-                "n_ticket": "Nro Ticket",
-                "tt_tramitacion": "T.T"
-            })
-
+    # Intentamos leer el JSON guardado en la observación o reconstruir desde la BD
     df_resumen_reimp = pd.DataFrame()
-    if not df_vales_reimp.empty:
-        vales_por_os = df_vales_reimp.groupby("Obra Social").size().reset_index(name="Vales Retenidos")
-        vales_por_os["Total CSV"] = vales_por_os["Vales Retenidos"]
-        vales_por_os["Físico Enviado"] = 0
-        df_resumen_reimp = vales_por_os
+    try:
+        if "{" in obs_text and "}" in obs_text:
+            json_part = obs_text[obs_text.find("{"):obs_text.rfind("}")+1]
+            data_guardada = json.loads(json_part)
+            if "resumen_os" in data_guardada:
+                df_resumen_reimp = pd.DataFrame(data_guardada["resumen_os"])
+    except Exception:
+        pass
+
+    if df_resumen_reimp.empty:
+        # Respaldo por si el lote es antiguo
+        res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
+        df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
+        if not df_vales_reimp.empty:
+            if "obra_social" in df_vales_reimp.columns and "Obra Social" not in df_vales_reimp.columns:
+                df_vales_reimp = df_vales_reimp.rename(columns={
+                    "obra_social": "Obra Social",
+                    "plan": "Plan",
+                    "n_ticket": "Nro Ticket",
+                    "tt_tramitacion": "T.T"
+                })
+            vales_por_os = df_vales_reimp.groupby("Obra Social").size().reset_index(name="Vales Retenidos")
+            vales_por_os["Total CSV"] = vales_por_os["Vales Retenidos"]
+            vales_por_os["Físico Enviado"] = 0
+            df_resumen_reimp = vales_por_os
+    else:
+        res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
+        df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
+        if not df_vales_reimp.empty:
+            if "obra_social" in df_vales_reimp.columns and "Obra Social" not in df_vales_reimp.columns:
+                df_vales_reimp = df_vales_reimp.rename(columns={
+                    "obra_social": "Obra Social",
+                    "plan": "Plan",
+                    "n_ticket": "Nro Ticket",
+                    "tt_tramitacion": "T.T"
+                })
 
     return generar_pdf_bytes(
         str(lote_h.get("sucursal")),
@@ -1087,12 +1108,18 @@ else:
                             if referencia_usuario:
                                 obs_final += f" | Ref: {referencia_usuario}"
 
+                            # Guardamos también el resumen detallado en formato JSON dentro de la observación
+                            info_completa_lote = {
+                                "texto": obs_final,
+                                "resumen_os": df_resumen_os_pdf.to_dict(orient="records")
+                            }
+
                             data_lote = {
                                 "id_lote": id_lote_final,
                                 "sucursal": sucursal_actual,
                                 "fecha_carga": fecha_str_db,
                                 "estado": "Cerrado",
-                                "observacion": obs_final,
+                                "observacion": json.dumps(info_completa_lote),
                             }
 
                             res_insert = (
@@ -1166,8 +1193,19 @@ else:
                 if res_suc.data and len(res_suc.data) > 0:
                     for lote_h in res_suc.data:
                         estado_actual_lote = lote_h.get("estado", "Cerrado")
+                        
+                        # Extraer la observación legible
+                        obs_raw = lote_h.get("observacion", "")
+                        obs_texto_mostrar = obs_raw
+                        try:
+                            if "{" in obs_raw and "}" in obs_raw:
+                                j_parsed = json.loads(obs_raw)
+                                obs_texto_mostrar = j_parsed.get("texto", obs_raw)
+                        except Exception:
+                            pass
+
                         with st.expander(
-                            f"📦 Fecha: {lote_h.get('fecha_carga')} — Estado: [{estado_actual_lote}] — Ref: {lote_h.get('observacion')}"
+                            f"📦 Fecha: {lote_h.get('fecha_carga')} — Estado: [{estado_actual_lote}] — Ref: {obs_texto_mostrar}"
                         ):
                             col_info, col_btn = st.columns([3, 1])
                             with col_info:
@@ -1423,7 +1461,7 @@ else:
                                         st.button(
                                             "🚀 Enviar elegidos",
                                             disabled=True,
-                                            help="No podés enviar registros que ya están Enviados o Cancelados.",
+                                            help="No podés enviar registros que ya estão Enviados o Cancelados.",
                                         )
 
                                 with col_acc2:
@@ -1528,10 +1566,20 @@ else:
                 if res_lotes_mut.data:
                     for lote_m in res_lotes_mut.data:
                         estado_lote = lote_m.get("estado", "Cerrado")
+                        
+                        obs_raw = lote_m.get("observacion", "")
+                        obs_texto_mostrar = obs_raw
+                        try:
+                            if "{" in obs_raw and "}" in obs_raw:
+                                j_parsed = json.loads(obs_raw)
+                                obs_texto_mostrar = j_parsed.get("texto", obs_raw)
+                        except Exception:
+                            pass
+
                         with st.expander(
                             f"📁 Lote: {lote_m.get('id_lote')} — Fecha: {lote_m.get('fecha_carga')} — Estado: [{estado_lote}]"
                         ):
-                            st.write(f"**Observación:** {lote_m.get('observacion')}")
+                            st.write(f"**Observación:** {obs_texto_mostrar}")
                             st.write(
                                 f"**Fecha de creación:** {lote_m.get('created_at')}"
                             )
