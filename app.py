@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
 import json
+import re
 
 # 1. Configuración de la página
 st.set_page_config(
@@ -179,6 +180,47 @@ def generar_pdf_bytes(
     pdf.cell(190, 10, texto_totales, 1, 1, "C", True)
 
     return pdf.output(dest="S").encode("latin1")
+
+
+def generar_pdf_desde_historial(lote_h, supabase_client):
+    obs_text = str(lote_h.get("observacion", ""))
+    envios_reimp = 0
+    vales_reimp = 0
+    
+    m_env = re.search(r'Enviadas:\s*(\d+)', obs_text)
+    if m_env:
+        envios_reimp = int(m_env.group(1))
+    m_val = re.search(r'Vales:\s*(\d+)', obs_text)
+    if m_val:
+        vales_reimp = int(m_val.group(1))
+
+    res_v_db = supabase_client.table("vales").select("*").eq("id_lote", lote_h.get("id_lote")).execute()
+    df_vales_reimp = pd.DataFrame(res_v_db.data) if res_v_db.data else pd.DataFrame()
+    if not df_vales_reimp.empty:
+        if "obra_social" in df_vales_reimp.columns and "Obra Social" not in df_vales_reimp.columns:
+            df_vales_reimp = df_vales_reimp.rename(columns={
+                "obra_social": "Obra Social",
+                "plan": "Plan",
+                "n_ticket": "Nro Ticket",
+                "tt_tramitacion": "T.T"
+            })
+
+    df_resumen_reimp = pd.DataFrame()
+    if not df_vales_reimp.empty:
+        vales_por_os = df_vales_reimp.groupby("Obra Social").size().reset_index(name="Vales Retenidos")
+        vales_por_os["Total CSV"] = vales_por_os["Vales Retenidos"]
+        vales_por_os["Físico Enviado"] = 0
+        df_resumen_reimp = vales_por_os
+
+    return generar_pdf_bytes(
+        str(lote_h.get("sucursal")),
+        str(lote_h.get("fecha_carga")),
+        obs_text,
+        envios_reimp,
+        vales_reimp,
+        df_resumen_reimp,
+        df_vales_reimp
+    )
 
 
 # --- PANTALLA DE LOGIN ---
@@ -470,10 +512,8 @@ else:
                         type="primary",
                     )
 
-                    # --- NUEVO BOTÓN PARA CARGAR OTRO LOTE SIN CERRAR SESIÓN ---
                     st.markdown("---")
                     if st.button("➕ Cargar un Nuevo Lote / Volver al Inicio", type="secondary"):
-                        # Borramos las variables de estado relativas al lote activo y al éxito
                         st.session_state.pop("lote_generado_exito", None)
                         st.session_state.pop("df_lote_activo", None)
                         st.session_state.pop("recetas_verificadas", None)
@@ -1151,15 +1191,7 @@ else:
                                     "📥 Reimprimir PDF",
                                     key=f"reimp_suc_{lote_h.get('id_lote')}",
                                 ):
-                                    pdf_reimp_bytes = generar_pdf_bytes(
-                                        str(lote_h.get("sucursal")),
-                                        str(lote_h.get("fecha_carga")),
-                                        str(lote_h.get("observacion")),
-                                        0,
-                                        0,
-                                        pd.DataFrame(),
-                                        pd.DataFrame(),
-                                    )
+                                    pdf_reimp_bytes = generar_pdf_desde_historial(lote_h, supabase)
                                     st.download_button(
                                         label="💾 Descargar Archivo PDF",
                                         data=pdf_reimp_bytes,
@@ -1541,15 +1573,7 @@ else:
                                     f"📥 Descargar Resumen PDF",
                                     key=f"pdf_mut_{lote_m.get('id_lote')}",
                                 ):
-                                    pdf_bytes_mut = generar_pdf_bytes(
-                                        str(lote_m.get("sucursal")),
-                                        str(lote_m.get("fecha_carga")),
-                                        str(lote_m.get("observacion")),
-                                        0,
-                                        0,
-                                        pd.DataFrame(),
-                                        pd.DataFrame(),
-                                    )
+                                    pdf_bytes_mut = generar_pdf_desde_historial(lote_m, supabase)
                                     st.download_button(
                                         label="💾 Guardar PDF en equipo",
                                         data=pdf_bytes_mut,
