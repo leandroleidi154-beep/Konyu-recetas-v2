@@ -93,9 +93,12 @@ def generar_pdf_bytes(
     df_resumen_os,
     df_vales,
     df_particulares=None,
+    df_desestimadas=None,
 ):
     if df_particulares is None:
         df_particulares = pd.DataFrame()
+    if df_desestimadas is None:
+        df_desestimadas = pd.DataFrame()
 
     pdf = FPDF()
     pdf.add_page()
@@ -117,14 +120,14 @@ def generar_pdf_bytes(
     )
     pdf.ln(5)
 
-    # Tabla 1: Resumen por Obra Social (Mutuales)
+    # Tabla 1: Resumen por Obra Social (Mutuales activas)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(190, 8, "1. Resumen por Obra Social (Recetas Enviadas a Mutuales)", 0, 1, "L")
 
     pdf.set_fill_color(220, 220, 220)
     pdf.set_font("Arial", "B", 9)
     pdf.cell(95, 7, "Obra Social", 1, 0, "C", True)
-    pdf.cell(30, 7, "Total CSV", 1, 0, "C", True)
+    pdf.cell(30, 7, "Total Activas", 1, 0, "C", True)
     pdf.cell(35, 7, "Vales Retenidos", 1, 0, "C", True)
     pdf.cell(30, 7, "Físico Enviado", 1, 1, "C", True)
 
@@ -204,26 +207,57 @@ def generar_pdf_bytes(
             pdf.cell(45, 6, str(row_p.get("Nro Ticket", "")), 1, 0, "C")
             pdf.cell(35, 6, str(row_p.get("T.T", "")), 1, 1, "C")
 
+        pdf.ln(5)
+
+    # Tabla 4: Recetas Desestimadas / A Refacturar
+    cant_desestimadas = len(df_desestimadas)
+    if cant_desestimadas > 0:
+        num_seccion = "4" if cant_particulares > 0 else "3"
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(
+            190,
+            8,
+            f"{num_seccion}. Recetas Desestimadas / A Refacturar ({cant_desestimadas} receta/s - No enviadas)",
+            0,
+            1,
+            "L",
+        )
+
+        pdf.set_fill_color(220, 220, 220)
+        pdf.set_font("Arial", "B", 9)
+        pdf.cell(65, 7, "Obra Social", 1, 0, "C", True)
+        pdf.cell(45, 7, "Plan", 1, 0, "C", True)
+        pdf.cell(45, 7, "Nro Ticket", 1, 0, "C", True)
+        pdf.cell(35, 7, "T.T", 1, 1, "C", True)
+
+        pdf.set_font("Arial", "", 8)
+        for _, row_d in df_desestimadas.iterrows():
+            pdf.cell(65, 6, str(row_d.get("Obra Social", "")), 1, 0, "L")
+            pdf.cell(45, 6, str(row_d.get("Plan", "")), 1, 0, "L")
+            pdf.cell(45, 6, str(row_d.get("Nro Ticket", "")), 1, 0, "C")
+            pdf.cell(35, 6, str(row_d.get("T.T", "")), 1, 1, "C")
+
         pdf.ln(6)
     else:
         pdf.ln(3)
 
     # Cuadro de Totales Generales Resaltado y Ajustado
     pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("Arial", "B", 8.5)
+    pdf.set_font("Arial", "B", 8)
 
     envio_final = total_envio if total_envio > 0 else total_fisico_acum
     vales_final = total_vales if total_vales > 0 else total_vales_acum
     procesadas_mutuales = (
         total_csv_acum if total_csv_acum > 0 else (envio_final + vales_final)
     )
-    total_csv_global = procesadas_mutuales + cant_particulares
+    total_csv_global = procesadas_mutuales + cant_particulares + cant_desestimadas
 
     texto_totales = (
-        f"TOTALES:  "
-        f"CSV Global: {total_csv_global}  |  "
-        f"Archivo Sucursal (Part.): {cant_particulares}  |  "
-        f"Vales Retenidos: {vales_final}  |  "
+        f"TOTALES: "
+        f"CSV: {total_csv_global} | "
+        f"Part.: {cant_particulares} | "
+        f"Desest.: {cant_desestimadas} | "
+        f"Vales: {vales_final} | "
         f"Físicas Enviadas: {envio_final}"
     )
 
@@ -240,6 +274,7 @@ def generar_pdf_desde_historial(lote_h, supabase_client):
 
     df_resumen_reimp = pd.DataFrame()
     df_particulares_reimp = pd.DataFrame()
+    df_desestimadas_reimp = pd.DataFrame()
     try:
         if "{" in obs_raw and "}" in obs_raw:
             data_guardada = json.loads(obs_raw)
@@ -248,6 +283,8 @@ def generar_pdf_desde_historial(lote_h, supabase_client):
                 df_resumen_reimp = pd.DataFrame(data_guardada["resumen_os"])
             if "particulares" in data_guardada:
                 df_particulares_reimp = pd.DataFrame(data_guardada["particulares"])
+            if "desestimadas" in data_guardada:
+                df_desestimadas_reimp = pd.DataFrame(data_guardada["desestimadas"])
     except Exception:
         pass
 
@@ -284,6 +321,7 @@ def generar_pdf_desde_historial(lote_h, supabase_client):
         df_resumen_reimp,
         df_vales_reimp,
         df_particulares_reimp,
+        df_desestimadas_reimp,
     )
 
 
@@ -555,10 +593,12 @@ else:
                 with col_resumen_txt:
                     st.subheader("📄 Resumen y Comprobante para Mutuales")
                     cant_part_info = len(lote_info.get("df_particulares", pd.DataFrame()))
+                    cant_desest_info = len(lote_info.get("df_desestimadas", pd.DataFrame()))
                     st.info(
                         f"Resumen: {lote_info['total_envio']} recetas enviadas a mutuales | "
                         f"{lote_info['total_vales']} retenidas como vales | "
-                        f"{cant_part_info} particulares archivadas en sucursal."
+                        f"{cant_part_info} particulares archivadas | "
+                        f"{cant_desest_info} desestimadas."
                     )
 
                     pdf_bytes = generar_pdf_bytes(
@@ -570,6 +610,7 @@ else:
                         lote_info.get("resumen_os", pd.DataFrame()),
                         lote_info.get("df_vales", pd.DataFrame()),
                         lote_info.get("df_particulares", pd.DataFrame()),
+                        lote_info.get("df_desestimadas", pd.DataFrame()),
                     )
 
                     st.download_button(
@@ -651,6 +692,10 @@ else:
                                 contenido_json = json.loads(borrador["observacion"])
                                 df_recuperado = pd.DataFrame(contenido_json["df_lote"])
                                 df_recuperado["Es Vale"] = df_recuperado["Es Vale"].astype(bool)
+                                if "Desestimada" not in df_recuperado.columns:
+                                    df_recuperado["Desestimada"] = False
+                                else:
+                                    df_recuperado["Desestimada"] = df_recuperado["Desestimada"].astype(bool)
                                 st.session_state["df_lote_activo"] = df_recuperado
                                 st.session_state["recetas_verificadas"] = set(
                                     contenido_json["verificadas"]
@@ -832,6 +877,7 @@ else:
                                                     "Nro Ticket": nro_ticket,
                                                     "T.T": tt_val,
                                                     "Es Vale": False,
+                                                    "Desestimada": False,
                                                 }
                                             )
                                             break
@@ -844,6 +890,7 @@ else:
                                         [f"REC_{i}" for i in range(len(df_base))],
                                     )
                                     df_base["Es Vale"] = df_base["Es Vale"].astype(bool)
+                                    df_base["Desestimada"] = df_base["Desestimada"].astype(bool)
                                     st.session_state["df_lote_activo"] = df_base
                                 else:
                                     st.warning(
@@ -854,27 +901,32 @@ else:
                             st.error(f"Error al procesar el archivo CSV: {e}")
                             st.stop()
 
+                    if "Desestimada" not in st.session_state["df_lote_activo"].columns:
+                        st.session_state["df_lote_activo"]["Desestimada"] = False
+
                     df_activo = st.session_state["df_lote_activo"]
 
-                    # Separamos automáticamente PARTICULAR del resto de Obras Sociales
+                    # Separamos PARTICULAR y Desestimadas del flujo de envío a mutuales
                     mask_particular = df_activo["Obra Social"].apply(es_particular)
                     df_particulares = df_activo[mask_particular].copy()
-                    df_mutuales = df_activo[~mask_particular].copy()
+                    df_mutuales_todas = df_activo[~mask_particular].copy()
+                    df_desestimadas = df_mutuales_todas[df_mutuales_todas["Desestimada"] == True].copy()
+                    df_mutuales_activas = df_mutuales_todas[df_mutuales_todas["Desestimada"] == False].copy()
 
                     st.success(
                         f"¡Reporte cargado correctamente para el día {fecha_str_fmt}! "
-                        f"Total CSV: **{len(df_activo)}** ({len(df_mutuales)} de Obras Sociales | "
-                        f"{len(df_particulares)} Particulares de archivo en sucursal)."
+                        f"Total CSV: **{len(df_activo)}** ({len(df_mutuales_activas)} activas de Obras Sociales | "
+                        f"{len(df_particulares)} Particulares | {len(df_desestimadas)} Desestimadas)."
                     )
 
                     st.markdown("---")
 
                     st.subheader("📊 Control por Obra Social (Envío a Mutuales)")
                     st.caption(
-                        "Podés tildar 'Seleccionar todo' en la fila de la Obra Social o desplegar para tildar receta por receta con el teclado (Espacio/Enter)."
+                        "Tildá 'Seleccionar todo', desplegá cada Obra Social para marcar las recetas presentes o desestimar una receta puntual, o desestimá la Obra Social completa."
                     )
 
-                    obras_sociales = df_mutuales["Obra Social"].unique()
+                    obras_sociales = df_mutuales_todas["Obra Social"].unique()
 
                     if "recetas_verificadas" not in st.session_state:
                         st.session_state["recetas_verificadas"] = set()
@@ -892,15 +944,18 @@ else:
                         st.info("No hay recetas de Obras Sociales para enviar a mutuales en este reporte.")
 
                     for os_nombre in obras_sociales:
-                        df_os_todas = df_mutuales[
-                            df_mutuales["Obra Social"] == os_nombre
+                        df_os_todas = df_mutuales_todas[
+                            df_mutuales_todas["Obra Social"] == os_nombre
                         ].copy()
-                        total_csv = len(df_os_todas)
+                        desest_os = len(df_os_todas[df_os_todas["Desestimada"] == True])
 
-                        df_os_fisicas = df_os_todas[
-                            df_os_todas["Es Vale"] == False
+                        df_os_activas = df_os_todas[df_os_todas["Desestimada"] == False].copy()
+                        total_activas_os = len(df_os_activas)
+
+                        df_os_fisicas = df_os_activas[
+                            df_os_activas["Es Vale"] == False
                         ].copy()
-                        vales_os = total_csv - len(df_os_fisicas)
+                        vales_os = total_activas_os - len(df_os_fisicas)
                         total_a_enviar_os = len(df_os_fisicas)
 
                         ids_fisicas_os = set(df_os_fisicas["ID_Fila"])
@@ -924,7 +979,8 @@ else:
                                 c_fis_label,
                                 c_fis_val,
                                 c_est,
-                            ) = st.columns([0.4, 2.0, 0.8, 0.8, 0.8, 1.2, 0.7, 0.5])
+                                c_desest_btn,
+                            ) = st.columns([0.35, 1.8, 0.75, 0.7, 0.75, 1.1, 0.65, 0.45, 1.0])
 
                             todaseleccionadas = (
                                 verificadas_os == total_a_enviar_os
@@ -933,23 +989,32 @@ else:
                             c_chk_fast.checkbox(
                                 "",
                                 value=todaseleccionadas,
+                                disabled=(total_a_enviar_os == 0),
                                 key=f"chk_main_{os_nombre}",
-                                help="Tildá acá para marcar TODAS las físicas de esta Obra Social automáticamente.",
+                                help="Tildá acá para marcar TODAS las físicas activas de esta Obra Social.",
                                 on_change=toggle_todos_os,
                                 args=(os_nombre, ids_fisicas_os)
                             )
 
-                            c_os.markdown(f"**{os_nombre}**")
-                            c_tot.markdown(f"Total: **{total_csv}**")
+                            if total_activas_os == 0 and desest_os > 0:
+                                c_os.markdown(f"~~{os_nombre}~~ *(Desestimada)*")
+                            elif desest_os > 0:
+                                c_os.markdown(f"**{os_nombre}** *({desest_os} desest.)*")
+                            else:
+                                c_os.markdown(f"**{os_nombre}**")
+
+                            c_tot.markdown(f"Activas: **{total_activas_os}**")
                             c_val.markdown(f"Vales: **{vales_os}**")
                             c_env.markdown(f"A enviar: **{total_a_enviar_os}**")
 
-                            c_fis_label.markdown("Enviadas físicamente:")
+                            c_fis_label.markdown("Enviadas fís.:")
                             c_fis_val.markdown(
                                 f"**{verificadas_os} / {total_a_enviar_os}**"
                             )
 
-                            if (
+                            if total_activas_os == 0 and desest_os > 0:
+                                c_est.info("🚫")
+                            elif (
                                 verificadas_os == total_a_enviar_os
                                 and total_a_enviar_os >= 0
                             ):
@@ -957,18 +1022,50 @@ else:
                             else:
                                 c_est.warning("⏳")
 
+                            with c_desest_btn:
+                                if total_activas_os > 0:
+                                    if st.button(
+                                        "Desestimar",
+                                        key=f"btn_desest_os_{os_nombre}",
+                                        help="Desestima todas las recetas de esta Obra Social para no contarlas hoy.",
+                                    ):
+                                        mask_os = (
+                                            st.session_state["df_lote_activo"]["Obra Social"] == os_nombre
+                                        )
+                                        ids_os_all = set(
+                                            st.session_state["df_lote_activo"].loc[mask_os, "ID_Fila"]
+                                        )
+                                        st.session_state["df_lote_activo"].loc[mask_os, "Desestimada"] = True
+                                        st.session_state["df_lote_activo"].loc[mask_os, "Es Vale"] = False
+                                        st.session_state["recetas_verificadas"].difference_update(ids_os_all)
+                                        auto_guardar_borrador(sucursal_actual, fecha_str_db)
+                                        st.rerun()
+                                elif desest_os > 0:
+                                    if st.button(
+                                        "↩️ Revertir",
+                                        key=f"btn_rev_os_{os_nombre}",
+                                        help="Restaura las recetas desestimadas de esta Obra Social.",
+                                    ):
+                                        mask_os = (
+                                            st.session_state["df_lote_activo"]["Obra Social"] == os_nombre
+                                        )
+                                        st.session_state["df_lote_activo"].loc[mask_os, "Desestimada"] = False
+                                        auto_guardar_borrador(sucursal_actual, fecha_str_db)
+                                        st.rerun()
+
                             with st.expander(
                                 f"🔍 Auditables: {total_a_enviar_os} receta(s) física(s) de {os_nombre}"
                             ):
                                 if total_a_enviar_os > 0:
                                     st.caption(
-                                        "💡 *Tip: Navegá con flechas ↓ y tildá rápido con 'Espacio' o 'Enter'.*"
+                                        "💡 *Tip: Navegá con flechas ↓ y tildá rápido con 'Espacio'. Si una receta tiene falla y va a refacturarse mañana, tildá 'Desestimar'.*"
                                     )
 
                                     df_os_editor = df_os_fisicas.copy()
                                     df_os_editor["Físico OK"] = df_os_editor[
                                         "ID_Fila"
                                     ].isin(st.session_state["recetas_verificadas"])
+                                    df_os_editor["Desestimar"] = False
 
                                     edited_df_os = st.data_editor(
                                         df_os_editor[
@@ -978,6 +1075,7 @@ else:
                                                 "Nro Ticket",
                                                 "T.T",
                                                 "Físico OK",
+                                                "Desestimar",
                                             ]
                                         ],
                                         use_container_width=True,
@@ -989,6 +1087,11 @@ else:
                                                 help="Tildá si tenés el papel físico.",
                                                 default=False,
                                             ),
+                                            "Desestimar": st.column_config.CheckboxColumn(
+                                                "Desestimar",
+                                                help="Tildá para excluir esta receta del lote de hoy (ej. para refacturar mañana).",
+                                                default=False,
+                                            ),
                                         },
                                         key=f"editor_fisico_os_{os_nombre}",
                                     )
@@ -996,40 +1099,95 @@ else:
                                     cambios_detectados = False
                                     for _, row_e in edited_df_os.iterrows():
                                         id_f = row_e["ID_Fila"]
-                                        verif = row_e["Físico OK"]
+                                        verif = bool(row_e["Físico OK"])
+                                        desest_fila = bool(row_e["Desestimar"])
 
-                                        if (
-                                            verif
-                                            and id_f
-                                            not in st.session_state[
-                                                "recetas_verificadas"
-                                            ]
-                                        ):
-                                            st.session_state[
-                                                "recetas_verificadas"
-                                            ].add(id_f)
+                                        if desest_fila:
+                                            fila_mask = st.session_state["df_lote_activo"]["ID_Fila"] == id_f
+                                            st.session_state["df_lote_activo"].loc[fila_mask, "Desestimada"] = True
+                                            st.session_state["df_lote_activo"].loc[fila_mask, "Es Vale"] = False
+                                            st.session_state["recetas_verificadas"].discard(id_f)
                                             cambios_detectados = True
-                                        elif (
-                                            not verif
-                                            and id_f
-                                            in st.session_state[
-                                                "recetas_verificadas"
-                                            ]
-                                        ):
-                                            st.session_state[
-                                                "recetas_verificadas"
-                                            ].discard(id_f)
-                                            cambios_detectados = True
+                                        else:
+                                            if (
+                                                verif
+                                                and id_f
+                                                not in st.session_state[
+                                                    "recetas_verificadas"
+                                                ]
+                                            ):
+                                                st.session_state[
+                                                    "recetas_verificadas"
+                                                ].add(id_f)
+                                                cambios_detectados = True
+                                            elif (
+                                                not verif
+                                                and id_f
+                                                in st.session_state[
+                                                    "recetas_verificadas"
+                                                ]
+                                            ):
+                                                st.session_state[
+                                                    "recetas_verificadas"
+                                                ].discard(id_f)
+                                                cambios_detectados = True
 
                                     if cambios_detectados:
                                         auto_guardar_borrador(sucursal_actual, fecha_str_db)
                                         st.rerun()
+                                elif desest_os > 0 and total_activas_os == 0:
+                                    st.info(
+                                        "Esta Obra Social fue desestimada completa. Usá el botón '↩️ Revertir' si querés volver a incluirla."
+                                    )
                                 else:
                                     st.info(
-                                        "Todas las recetas de esta Obra Social están marcadas como Vale o no hay ítems."
+                                        "Todas las recetas activas de esta Obra Social están marcadas como Vale o no hay ítems."
                                     )
 
                             st.markdown("---")
+
+                    # --- APARTADO DE RECETAS DESESTIMADAS / A REFACTURAR (CON OPCIÓN DE REVERTIR) ---
+                    if not df_desestimadas.empty:
+                        st.subheader(f"🚫 Recetas Desestimadas / A Refacturar ({len(df_desestimadas)})")
+                        st.caption(
+                            "Estas recetas fueron excluidas del lote de hoy. Si te equivocaste o querés volver a incluir alguna, tildá 'Revertir ↩️'."
+                        )
+                        with st.expander(
+                            f"📋 Ver / Revertir {len(df_desestimadas)} receta(s) desestimada(s) del día {fecha_str_fmt}",
+                            expanded=True,
+                        ):
+                            df_desest_editor = df_desestimadas[
+                                ["ID_Fila", "Obra Social", "Plan", "Nro Ticket", "T.T"]
+                            ].copy()
+                            df_desest_editor["Revertir"] = False
+
+                            edited_desest = st.data_editor(
+                                df_desest_editor,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "ID_Fila": None,
+                                    "Revertir": st.column_config.CheckboxColumn(
+                                        "Revertir ↩️",
+                                        help="Tildá para devolver esta receta al listado activo de su Obra Social.",
+                                        default=False,
+                                    ),
+                                },
+                                key="editor_revertir_desestimadas",
+                            )
+
+                            hubo_reversion = False
+                            for _, row_rev in edited_desest.iterrows():
+                                if bool(row_rev["Revertir"]):
+                                    id_f = row_rev["ID_Fila"]
+                                    fila_mask = st.session_state["df_lote_activo"]["ID_Fila"] == id_f
+                                    st.session_state["df_lote_activo"].loc[fila_mask, "Desestimada"] = False
+                                    hubo_reversion = True
+
+                            if hubo_reversion:
+                                auto_guardar_borrador(sucursal_actual, fecha_str_db)
+                                st.rerun()
+                        st.markdown("---")
 
                     # --- APARTADO AUTOMÁTICO DE RECETAS PARTICULARES (ARCHIVO EN SUCURSAL) ---
                     if not df_particulares.empty:
@@ -1050,7 +1208,7 @@ else:
 
                     st.subheader("🔍 Detalle General y Marcado de Vales (Aparte)")
                     st.caption(
-                        "Utilizá esta sección exclusivamente si necesitás retener recetas de Obras Sociales como vales por falta de medicación."
+                        "Utilizá esta sección exclusivamente si necesitás retener recetas como vales por falta de medicación."
                     )
 
                     busqueda = st.text_input(
@@ -1059,7 +1217,7 @@ else:
                         key="busqueda_vales_general",
                     )
 
-                    df_filtrado = df_mutuales.copy()
+                    df_filtrado = df_mutuales_activas.copy()
                     if busqueda:
                         df_filtrado = df_filtrado[
                             df_filtrado["Nro Ticket"].str.contains(
@@ -1071,7 +1229,7 @@ else:
                         ]
 
                     st.info(
-                        f"Mostrando {len(df_filtrado)} de {len(df_mutuales)} registros de Obras Sociales."
+                        f"Mostrando {len(df_filtrado)} de {len(df_mutuales_activas)} registros activos de Obras Sociales."
                     )
 
                     edited_df_vales = st.data_editor(
@@ -1103,22 +1261,13 @@ else:
                         id_f = row_ed["ID_Fila"]
                         nuevo_val_vale = bool(row_ed["Es Vale"])
 
+                        fila_mask = st.session_state["df_lote_activo"]["ID_Fila"] == id_f
                         val_actual = bool(
-                            st.session_state["df_lote_activo"]
-                            .loc[
-                                st.session_state["df_lote_activo"]["ID_Fila"]
-                                == id_f,
-                                "Es Vale",
-                            ]
-                            .values[0]
+                            st.session_state["df_lote_activo"].loc[fila_mask, "Es Vale"].values[0]
                         )
 
                         if val_actual != nuevo_val_vale:
-                            st.session_state["df_lote_activo"].loc[
-                                st.session_state["df_lote_activo"]["ID_Fila"]
-                                == id_f,
-                                "Es Vale",
-                            ] = nuevo_val_vale
+                            st.session_state["df_lote_activo"].loc[fila_mask, "Es Vale"] = nuevo_val_vale
                             cambios_vales_detectados = True
 
                     if cambios_vales_detectados:
@@ -1135,11 +1284,11 @@ else:
                     btn_label = "🔒 Cerrar y Generar Lote para Mutuales"
 
                     total_vales_lote_check = len(
-                        df_mutuales[df_mutuales["Es Vale"] == True]
+                        df_mutuales_activas[df_mutuales_activas["Es Vale"] == True]
                     )
 
                     ids_auditables_mutuales = set(
-                        df_mutuales[df_mutuales["Es Vale"] == False]["ID_Fila"]
+                        df_mutuales_activas[df_mutuales_activas["Es Vale"] == False]["ID_Fila"]
                     )
                     recetas_marcadas_validas = len(
                         ids_auditables_mutuales.intersection(
@@ -1150,8 +1299,8 @@ else:
 
                     if faltan_verificar > 0:
                         st.warning(
-                            f"⚠️ **Atención:** Todavía te faltan **{faltan_verificar}** receta(s) física(s) de Obras Sociales por tildar o auditar. "
-                            f"Revisá los desplegables de las Obras Sociales para completar el 100% antes de cerrar el lote."
+                            f"⚠️ **Atención:** Todavía te faltan **{faltan_verificar}** receta(s) física(s) activa(s) de Obras Sociales por tildar o auditar. "
+                            f"Revisá los desplegables de las Obras Sociales (o desestimá las que correspondan) antes de cerrar el lote."
                         )
 
                     if st.button(btn_label, type="primary", disabled=(faltan_verificar > 0)):
@@ -1160,8 +1309,8 @@ else:
                             filas_os_pdf = []
                             total_envio_lote = 0
 
-                            for os_n in df_mutuales["Obra Social"].unique():
-                                df_sub = df_mutuales[df_mutuales["Obra Social"] == os_n]
+                            for os_n in df_mutuales_activas["Obra Social"].unique():
+                                df_sub = df_mutuales_activas[df_mutuales_activas["Obra Social"] == os_n]
                                 total_csv_os = len(df_sub)
                                 v_m = len(df_sub[df_sub["Es Vale"] == True])
 
@@ -1182,10 +1331,13 @@ else:
                                 )
 
                             df_resumen_os_pdf = pd.DataFrame(filas_os_pdf)
-                            df_vales_pdf = df_mutuales[df_mutuales["Es Vale"] == True][
+                            df_vales_pdf = df_mutuales_activas[df_mutuales_activas["Es Vale"] == True][
                                 ["Obra Social", "Plan", "Nro Ticket", "T.T"]
                             ]
                             df_particulares_pdf = df_particulares[
+                                ["Obra Social", "Plan", "Nro Ticket", "T.T"]
+                            ]
+                            df_desestimadas_pdf = df_desestimadas[
                                 ["Obra Social", "Plan", "Nro Ticket", "T.T"]
                             ]
 
@@ -1194,6 +1346,8 @@ else:
                                 f"Vales: {total_vales_lote} | "
                                 f"Particulares: {len(df_particulares_pdf)}"
                             )
+                            if len(df_desestimadas_pdf) > 0:
+                                obs_final += f" | Desestimadas: {len(df_desestimadas_pdf)}"
                             if referencia_usuario:
                                 obs_final += f" | Ref: {referencia_usuario}"
 
@@ -1201,6 +1355,7 @@ else:
                                 "texto": obs_final,
                                 "resumen_os": df_resumen_os_pdf.to_dict(orient="records"),
                                 "particulares": df_particulares_pdf.to_dict(orient="records"),
+                                "desestimadas": df_desestimadas_pdf.to_dict(orient="records"),
                             }
 
                             data_lote = {
@@ -1216,8 +1371,8 @@ else:
                             )
 
                             if res_insert:
-                                df_vales_a_guardar = df_mutuales[
-                                    df_mutuales["Es Vale"] == True
+                                df_vales_a_guardar = df_mutuales_activas[
+                                    df_mutuales_activas["Es Vale"] == True
                                 ]
                                 supabase.table("vales").delete().eq(
                                     "id_lote", id_lote_final
@@ -1258,6 +1413,7 @@ else:
                                     "resumen_os": df_resumen_os_pdf,
                                     "df_vales": df_vales_pdf,
                                     "df_particulares": df_particulares_pdf,
+                                    "df_desestimadas": df_desestimadas_pdf,
                                 }
                                 st.rerun()
                             else:
